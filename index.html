@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#4a90e2" />
+  <title>MelodyTunes</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+
+  <!-- FIREBASE IMPORTMAP -->
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js"
+    }
+  }
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js')
+          .then(() => console.log('SW OK'))
+          .catch(e => console.error('SW failed', e));
+      });
+    }
+  </script>
+</head>
+
+<body class="light-theme">
+  <div class="app">
+
+    <!-- TOP BAR -->
+    <header class="top-bar">
+      <div class="logo-area">
+        <img src="assets/logo.png" alt="MelodyTunes" class="app-logo" />
+        <span class="app-title">MelodyTunes</span>
+      </div>
+
+      <button id="profile-btn" aria-label="Profile">
+        <img id="nav-avatar" src="" alt="Profile" />
+      </button>
+    </header>
+
+    <!-- SEARCH -->
+    <div class="search-section">
+      <input type="search" id="search" placeholder="Search songs, artists…" autocomplete="off" />
+    </div>
+
+    <!-- GENRE DROPDOWN (Improved) -->
+    <div class="genre-wrapper" id="genre-wrapper">
+      <button id="genre-btn" class="genre-btn" aria-haspopup="true" aria-expanded="false">
+        <span id="genre-label">Hindi</span>
+        <span class="material-icons arrow">expand_more</span>
+      </button>
+
+      <div id="genre-menu" class="genre-menu" role="menu" aria-hidden="true">
+        <div class="genre-item active" data-genre="hindi" role="menuitem">Hindi</div>
+        <div class="genre-item" data-genre="punjabi" role="menuitem">Punjabi</div>
+        <div class="genre-item" data-genre="haryanvi" role="menuitem">Haryanvi</div>
+        <div class="genre-item" data-genre="bhojpuri" role="menuitem">Bhojpuri</div>
+        <div class="genre-item" data-genre="remix" role="menuitem">Remix</div>
+        <div class="genre-item" data-genre="50s-old-hits" role="menuitem">50s Old Hits</div>
+      </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <main class="content">
+      <section id="grid" class="song-grid" aria-live="polite"></section>
+      <section id="search-grid" class="song-grid" hidden aria-live="polite"></section>
+    </main>
+
+    <!-- PLAYER -->
+    <footer id="player" class="player" hidden>
+      <div class="thumb-placeholder"></div>
+      <div class="info">
+        <h4 id="player-title">Select a song</h4>
+        <audio id="audio" preload="metadata" crossorigin="anonymous"></audio>
+        <input type="range" id="seek" value="0" max="100" class="seek-bar" />
+      </div>
+
+      <div class="controls">
+        <button id="prev" class="icon-btn" aria-label="Previous"><span class="material-icons">skip_previous</span></button>
+        <button id="play-pause" class="icon-btn" aria-label="Play/Pause"><span class="material-icons">play_arrow</span></button>
+        <button id="next" class="icon-btn" aria-label="Next"><span class="material-icons">skip_next</span></button>
+        <button id="repeat" class="icon-btn" aria-label="Repeat"><span class="material-icons">repeat</span></button>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="scripts/player.js"></script>
+  <script type="module" src="scripts/app.js"></script>
+</body>
+</html>

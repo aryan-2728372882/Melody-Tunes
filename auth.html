@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeTunes – Sign in</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+
+  <!-- FIREBASE IMPORTMAP -->
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js"
+    }
+  }
+  </script>
+
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#4a90e2,#7b68ee);height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+    .container{width:380px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,.2);}
+    .slider{display:flex;width:200%;transition:transform .6s cubic-bezier(.4,0,.2,1);}
+    .panel{width:50%;padding:3rem 2rem;text-align:center;}
+    .panel h2{margin-bottom:.8rem;color:#333;}
+    .panel p{margin-bottom:1.5rem;color:#666;}
+    .btn{margin-top:1rem;padding:.9rem 1.5rem;background:#4a90e2;color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;}
+    .btn:hover{background:#357abd;}
+    .btn:disabled{opacity:.7;cursor:not-allowed;}
+    .indicator{text-align:center;margin-top:1rem;padding-bottom:1rem;}
+    .dot{width:8px;height:8px;background:#ddd;border-radius:50%;display:inline-block;margin:0 4px;transition:.3s;cursor:pointer;}
+    .dot.active{background:#4a90e2;}
+    .logo{font-size:2rem;font-weight:600;color:#4a90e2;margin-bottom:1rem;}
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="slider" id="slider">
+      <div class="panel">
+        <div class="logo">VT</div>
+        <h2>Welcome Back</h2>
+        <p>Sign in to continue</p>
+        <button class="btn" id="google-login">
+          <span class="material-icons">login</span> Sign in with Google
+        </button>
+      </div>
+
+      <div class="panel">
+        <div class="logo">VT</div>
+        <h2>Create Account</h2>
+        <p>Join VibeTunes today</p>
+        <button class="btn" id="google-signup">
+          <span class="material-icons">person_add</span> Sign up with Google
+        </button>
+      </div>
+    </div>
+
+    <div class="indicator">
+      <span class="dot active" data-index="0"></span>
+      <span class="dot" data-index="1"></span>
+    </div>
+  </div>
+
+  <script type="module">
+    import { auth, db, provider } from "./scripts/firebase-config.js";
+    import { signInWithPopup, onAuthStateChanged } from "firebase/auth";
+
+    // FIXED: updateDoc added here
+    import { doc, setDoc, getDoc, updateDoc, serverTimestamp } 
+      from "firebase/firestore";
+
+    const slider = document.getElementById('slider');
+    const dots = document.querySelectorAll('.dot');
+    const loginBtn = document.getElementById('google-login');
+    const signupBtn = document.getElementById('google-signup');
+
+    // Slide animation
+    dots.forEach(dot => {
+      dot.addEventListener('click', () => {
+        const i = dot.dataset.index;
+        slider.style.transform = `translateX(${i === '0' ? '0%' : '-50%'})`;
+        dots.forEach(d => d.classList.toggle('active', d === dot));
+      });
+    });
+
+    // Google login/signup
+    const handleGoogle = async btn => {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-icons">hourglass_empty</span> Please wait...';
+
+      try {
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
+        const ref = doc(db, "users", user.uid);
+        const snap = await getDoc(ref);
+
+        if (!snap.exists()) {
+          await setDoc(ref, {
+            displayName: user.displayName || "User",
+            email: user.email,
+            photoURL: user.photoURL,
+            minutesListened: 0,
+            songsPlayed: 0,
+            isAdmin: user.email === "prabhakararyan2007@gmail.com",
+            country: "IN",
+            xHandle: "@DesiDiamondSave",
+            createdAt: serverTimestamp(),
+            lastLogin: serverTimestamp()
+          });
+        } else {
+          await updateDoc(ref, {
+            lastLogin: serverTimestamp(),
+            photoURL: user.photoURL,
+            displayName: user.displayName || "User"
+          });
+        }
+
+        if (user.email === "prabhakararyan2007@gmail.com") {
+          location.href = "admin-dashboard.html";
+        } else {
+          location.href = "index.html";
+        }
+
+      } catch (e) {
+        alert("Login failed: " + e.message);
+        btn.disabled = false;
+        btn.innerHTML = btn === loginBtn
+          ? '<span class="material-icons">login</span> Sign in with Google'
+          : '<span class="material-icons">person_add</span> Sign up with Google';
+      }
+    };
+
+    loginBtn.onclick = () => handleGoogle(loginBtn);
+    signupBtn.onclick = () => handleGoogle(signupBtn);
+
+    // Auto-login
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        if (user.email === "prabhakararyan2007@gmail.com") {
+          location.href = "admin-dashboard.html";
+        } else {
+          location.href = "index.html";
+        }
+      }
+    });
+  </script>
+</body>
+</html>

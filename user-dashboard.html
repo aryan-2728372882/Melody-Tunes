@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Profile – VibeTunes</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+  
+  <!-- FIREBASE IMPORTMAP - ADD THIS -->
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js"
+    }
+  }
+  </script>
+  
+  <style>
+    * {margin:0;padding:0;box-sizing:border-box;}
+    body {font-family:'Inter',sans-serif;background:#f4f6f9;color:#222;padding:2rem;}
+    .container {max-width:600px;margin:auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.1);}
+    .header {background:#4a90e2;color:#fff;padding:2rem;text-align:center;position:relative;}
+    .avatar {width:100px;height:100px;border-radius:50%;border:4px solid #fff;margin-top:-50px;box-shadow:0 4px 12px rgba(0,0,0,.2);object-fit:cover;}
+    .name {margin-top:1rem;font-size:1.4rem;font-weight:600;}
+    .email {opacity:0.9;font-size:0.95rem;}
+    .stats {display:grid;grid-template-columns:1fr 1fr;padding:1.5rem;gap:1rem;background:#f9f9fb;}
+    .stat {text-align:center;}
+    .stat h3 {font-size:1.8rem;margin:0;color:#4a90e2;}
+    .stat p {font-size:0.9rem;color:#666;}
+    .section {padding:1.5rem;border-top:1px solid #eee;}
+    .section h3 {margin-bottom:1rem;color:#333;font-size:1.1rem;}
+    .input-group {margin-bottom:1rem;}
+    label {display:block;margin-bottom:.4rem;font-weight:500;color:#555;}
+    input {width:100%;padding:.8rem;border:1px solid #ddd;border-radius:8px;font-size:1rem;}
+    input:focus {outline:none;border-color:#4a90e2;}
+    .btn {padding:.8rem 1.5rem;border:none;border-radius:8px;font-size:1rem;cursor:pointer;margin-right:.5rem;transition:opacity 0.2s;}
+    .btn-primary {background:#4a90e2;color:#fff;}
+    .btn-danger {background:#e74c3c;color:#fff;}
+    .btn-secondary {background:#95a5a6;color:#fff;}
+    .btn:hover {opacity:0.9;}
+    .btn:disabled {opacity:0.5;cursor:not-allowed;}
+    .logout {position:absolute;top:1rem;right:1rem;background:#e74c3c;color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:0.9rem;border:none;cursor:pointer;}
+    .back-btn {position:absolute;top:1rem;left:1rem;background:rgba(255,255,255,0.2);color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:0.9rem;border:none;cursor:pointer;text-decoration:none;display:inline-block;}
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <a href="index.html" class="back-btn">← Back</a>
+    <button class="logout" id="logout">Logout</button>
+    <img id="avatar" class="avatar" src="" alt="Profile">
+    <div class="name" id="display-name">Loading...</div>
+    <div class="email" id="email"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <h3 id="minutes">0</h3>
+      <p>Minutes Listened</p>
+    </div>
+    <div class="stat">
+      <h3 id="songs">0</h3>
+      <p>Songs Played</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Edit Profile</h3>
+    <div class="input-group">
+      <label for="new-name">Display Name</label>
+      <input type="text" id="new-name" placeholder="Enter new name">
+    </div>
+    <button class="btn btn-primary" id="save-name">Save Name</button>
+  </div>
+
+  <div class="section">
+    <h3>Account</h3>
+    <button class="btn btn-secondary" id="reset-pass" disabled>Reset Password (Google Account)</button>
+    <button class="btn btn-danger" id="delete-account">Delete Account</button>
+  </div>
+</div>
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { auth, db, provider } from "./scripts/firebase-config.js";
+  import { onAuthStateChanged, signOut, deleteUser, reauthenticateWithPopup } from "firebase/auth";
+  import { doc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
+
+  const avatarEl = document.getElementById('avatar');
+  const nameEl = document.getElementById('display-name');
+  const emailEl = document.getElementById('email');
+  const minutesEl = document.getElementById('minutes');
+  const songsEl = document.getElementById('songs');
+  const newNameInput = document.getElementById('new-name');
+  const saveBtn = document.getElementById('save-name');
+  const deleteBtn = document.getElementById('delete-account');
+  const logoutBtn = document.getElementById('logout');
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      location.href = "auth.html";
+      return;
+    }
+
+    // Auto-fetch Google avatar
+    avatarEl.src = user.photoURL || 'data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%27100%27 height=%27100%27><circle cx=%2750%27 cy=%2750%27 r=%2740%27 fill=%27%23ccc%27/><text x=%2750%25%27 y=%2755%25%27 font-size=%2730%27 fill=%27%23999%27 text-anchor=%27middle%27>?</text></svg>';
+
+    nameEl.textContent = user.displayName || "User";
+    emailEl.textContent = user.email;
+    newNameInput.value = user.displayName || "";
+
+    // Fetch Firestore stats
+    try {
+      const userRef = doc(db, "users", user.uid);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        minutesEl.textContent = Math.round(data.minutesListened || 0);
+        songsEl.textContent = data.songsPlayed || 0;
+      }
+    } catch (e) {
+      console.error("Error fetching user data:", e);
+    }
+  });
+
+  // Save Name
+  saveBtn.onclick = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const newName = newNameInput.value.trim();
+    if (!newName) return alert("Name cannot be empty");
+
+    try {
+      await updateDoc(doc(db, "users", user.uid), { displayName: newName });
+      nameEl.textContent = newName;
+      alert("Name updated!");
+    } catch (e) {
+      alert("Error: " + e.message);
+    }
+  };
+
+  // Delete Account
+  deleteBtn.onclick = async () => {
+    if (!confirm("Delete your account? This cannot be undone.")) return;
+
+    const user = auth.currentUser;
+    try {
+      // Re-authenticate with Google
+      await reauthenticateWithPopup(user, provider);
+      // Delete Firestore data
+      await deleteDoc(doc(db, "users", user.uid));
+      // Delete Auth user
+      await deleteUser(user);
+      alert("Account deleted.");
+      location.href = "auth.html";
+    } catch (e) {
+      alert("Error: " + e.message);
+    }
+  };
+
+  // Logout
+  logoutBtn.onclick = () => signOut(auth).then(() => location.href = "auth.html");
+</script>
+</body>
+</html>

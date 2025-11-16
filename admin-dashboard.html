@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Melody Tunes Admin</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Inter',sans-serif; background:#f4f6f9; padding:2rem; }
+    .container { max-width:1400px; margin:auto; }
+    h1 { text-align:center; margin-bottom:2rem; color:#4a90e2; }
+    .stats-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:2rem; }
+    .stat-card { background:#fff; padding:1.5rem; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.1); text-align:center; }
+    .stat-card h3 { font-size:2rem; color:#4a90e2; margin-bottom:0.5rem; }
+    .stat-card p { color:#666; font-size:0.9rem; }
+    table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,.1); }
+    th, td { padding:1rem; text-align:left; border-bottom:1px solid #eee; }
+    th { background:#4a90e2; color:#fff; font-weight:600; }
+    tr:hover { background:#f9f9fb; }
+    .avatar { width:40px; height:40px; border-radius:50%; object-fit:cover; margin-right:0.75rem; }
+    .user-info { display:flex; align-items:center; }
+    .user-details { display:flex; flex-direction:column; }
+    .user-name { font-weight:500; color:#333; }
+    .user-email { font-size:0.85rem; color:#999; }
+    .logout { position:fixed; top:20px; right:20px; background:#e74c3c; color:#fff; padding:0.6rem 1rem; border-radius:8px; cursor:pointer; border:none; }
+    .loading { text-align:center; padding:3rem; color:#999; }
+    .no-data { text-align:center; padding:3rem; color:#999; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>VibeTunes Admin Dashboard</h1>
+    <a href="index.html" class="home-btn">
+  <span class="material-icons">home</span>
+  Home
+</a>
+
+    <button class="logout" id="logout">Logout</button>
+    
+    <div class="stats-summary">
+      <div class="stat-card">
+        <h3 id="total-users">0</h3>
+        <p>Total Users</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="total-songs">0</h3>
+        <p>Total Songs Played</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="total-minutes">0</h3>
+        <p>Total Minutes Listened</p>
+      </div>
+    </div>
+
+    <div id="loading" class="loading">Loading user data...</div>
+    
+    <table id="users-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Minutes Listened</th>
+          <th>Songs Played</th>
+          <th>Last Played</th>
+          <th>Joined</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    
+    <div id="no-data" class="no-data" style="display:none;">No users found</div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script>
+    // Initialize Firebase with compat library
+    const firebaseConfig = {
+      apiKey: "AIzaSyClIhXAaTVmlqhEPxU49C9w9fDkUag-1eQ",
+      authDomain: "vibe-tunes.firebaseapp.com",
+      databaseURL: "https://vibe-tunes-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "vibe-tunes",
+      storageBucket: "vibe-tunes.firebasestorage.app",
+      messagingSenderId: "792892627539",
+      appId: "1:792892627539:web:69817da08d2d4741a404a6",
+      measurementId: "G-7RQD85KP8Z"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    auth.onAuthStateChanged(async (user) => {
+      if (!user || user.email !== 'prabhakararyan2007@gmail.com') {
+        window.location.href = 'auth.html';
+        return;
+      }
+
+      const tbody = document.querySelector('#users-table tbody');
+      const loadingEl = document.getElementById('loading');
+      const tableEl = document.getElementById('users-table');
+      const noDataEl = document.getElementById('no-data');
+      
+      try {
+        const snapshot = await db.collection('users').orderBy('songsPlayed', 'desc').get();
+
+        if (snapshot.empty) {
+          loadingEl.style.display = 'none';
+          noDataEl.style.display = 'block';
+          return;
+        }
+
+        let totalUsers = 0;
+        let totalSongs = 0;
+        let totalMinutes = 0;
+
+        snapshot.forEach(docSnapshot => {
+          const data = docSnapshot.data();
+          
+          totalUsers++;
+          totalSongs += data.songsPlayed || 0;
+          totalMinutes += data.minutesListened || 0;
+          
+          const lastPlayed = data.lastPlayed ? data.lastPlayed.toDate().toLocaleString() : 'Never';
+          const createdAt = data.createdAt ? data.createdAt.toDate().toLocaleDateString() : 'Unknown';
+          
+          // Get avatar with fallback
+          const avatarUrl = data.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.displayName || 'User')}&background=4a90e2&color=fff&size=80`;
+
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>
+              <div class="user-info">
+                <img src="${avatarUrl}" class="avatar" alt="Avatar" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(data.displayName || 'U')}&background=cccccc&color=666&size=80'">
+                <div class="user-details">
+                  <span class="user-name">${data.displayName || 'User'}</span>
+                  <span class="user-email">${data.email || 'No email'}</span>
+                </div>
+              </div>
+            </td>
+            <td>${Math.round(data.minutesListened || 0)}</td>
+            <td>${data.songsPlayed || 0}</td>
+            <td>${lastPlayed}</td>
+            <td>${createdAt}</td>
+          `;
+          tbody.appendChild(row);
+        });
+
+        // Update summary stats
+        document.getElementById('total-users').textContent = totalUsers;
+        document.getElementById('total-songs').textContent = totalSongs.toLocaleString();
+        document.getElementById('total-minutes').textContent = Math.round(totalMinutes).toLocaleString();
+
+        loadingEl.style.display = 'none';
+        tableEl.style.display = 'table';
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        loadingEl.textContent = 'Error loading data: ' + error.message;
+      }
+    });
+
+    document.getElementById('logout').onclick = () => auth.signOut().then(() => window.location.href = 'auth.html');
+  </script>
+</body>
+</html>
