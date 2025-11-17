@@ -416,14 +416,6 @@
         "genre": "Remix"
     },
     {
-        "title": "Jo Tere Sang",
-        "artist": "Mustafa Zahid",
-        "link": "https://qmsmncjhbrjtpeljhsph.supabase.co/storage/v1/object/public/remixes//Jo%20Tere%20Sang.mp3",
-        "thumbnail": "https://i.scdn.co/image/ab67616d00001e0251a0bc270b5543ea16cc394d",
-        "keywords": ["jo", "tere", "sang", "remix", "mustafa", "zahid"],
-        "genre": "Remix"
-    },
-    {
         "title": "Afsana Banake bhool na jana",
         "artist": "Imran Hashmi",
         "link": "https://qmsmncjhbrjtpeljhsph.supabase.co/storage/v1/object/public/remixes//Afsana%20Banake.mp3",
