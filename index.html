@@ -2,9 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1.0,user-scalable=0" />
   <meta name="theme-color" content="#4a90e2" />
   <meta name="description" content="Stream Hindi, Punjabi, Haryanvi & Bhojpuri music with seamless background playback" />
+  
+  <!-- PWA Configuration -->
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -12,6 +14,8 @@
   
   <title>MelodyTunes - Indian Music Player</title>
 
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%234a90e2'/%3E%3Ctext x='50' y='70' font-size='60' fill='white' text-anchor='middle' font-family='Arial'%3E♪%3C/text%3E%3C/svg%3E">
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="styles/styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -32,9 +36,8 @@
   }
   </script>
 
-  <!-- SERVICE WORKER REGISTRATION -->
+  <!-- SERVICE WORKER -->
   <script>
-    // Enhanced service worker registration with background playback support
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
@@ -45,16 +48,11 @@
 
           console.log('✅ Service Worker registered');
 
-          // Handle updates
           registration.addEventListener('updatefound', () => {
             const newWorker = registration.installing;
-            console.log('🔄 Update found');
-
             newWorker.addEventListener('statechange', () => {
               if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('📦 New version available');
-                
-                // Auto-update after 3 seconds
+                console.log('📦 Update available - reloading in 3s');
                 setTimeout(() => {
                   newWorker.postMessage({ type: 'SKIP_WAITING' });
                   window.location.reload();
@@ -63,7 +61,6 @@
             });
           });
 
-          // Listen for controller changes
           let refreshing = false;
           navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (!refreshing) {
@@ -72,53 +69,72 @@
             }
           });
 
-          // Request persistent storage
           if (navigator.storage && navigator.storage.persist) {
             const granted = await navigator.storage.persist();
-            console.log('💾 Persistent storage:', granted ? 'granted' : 'denied');
+            console.log('💾 Persistent storage:', granted ? '✅' : '❌');
           }
 
-          // Register periodic sync if supported
-          if ('periodicSync' in registration) {
-            try {
-              await registration.periodicSync.register('background-sync', {
-                minInterval: 24 * 60 * 60 * 1000 // 24 hours
-              });
-              console.log('⏰ Periodic sync registered');
-            } catch (e) {
-              console.log('Periodic sync not available');
-            }
+          if (navigator.storage && navigator.storage.estimate) {
+            const estimate = await navigator.storage.estimate();
+            console.log('📊 Storage:', Math.round(estimate.usage / 1024 / 1024) + 'MB');
           }
-
-          // Listen for messages from service worker
-          navigator.serviceWorker.addEventListener('message', event => {
-            if (event.data && event.data.type === 'SYNC_CHECK') {
-              console.log('💓 Sync check received');
-            }
-          });
 
         } catch (error) {
-          console.error('❌ Service Worker registration failed:', error);
+          console.error('❌ Service Worker failed:', error);
         }
       });
     }
 
-    // Request notification permission (helps with background playback on some devices)
-    function requestPermissions() {
+    // Prevent page unload during playback
+    window.addEventListener('beforeunload', (e) => {
+      const audio = document.getElementById('audio');
+      if (audio && !audio.paused) {
+        console.log('⚠️ Page unload prevented');
+        e.preventDefault();
+        e.returnValue = 'Music is playing. Are you sure?';
+        return e.returnValue;
+      }
+    });
+
+    // Request permissions
+    let permissionsRequested = false;
+    
+    async function requestAllPermissions() {
+      if (permissionsRequested) return;
+      permissionsRequested = true;
+      
+      console.log('🔐 Requesting permissions...');
+      
       if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission().then(permission => {
-          console.log('🔔 Notification permission:', permission);
-        });
+        try {
+          const permission = await Notification.requestPermission();
+          console.log('🔔 Notifications:', permission);
+        } catch (e) {
+          console.log('Notification request failed');
+        }
+      }
+      
+      if (navigator.storage && navigator.storage.persist) {
+        try {
+          const granted = await navigator.storage.persist();
+          if (granted) {
+            console.log('✅ Persistent storage granted');
+          }
+        } catch (e) {
+          console.log('Storage persist failed');
+        }
       }
     }
 
-    // Request on first user interaction
-    document.addEventListener('click', requestPermissions, { once: true });
+    ['click', 'touchstart', 'keydown'].forEach(event => {
+      document.addEventListener(event, requestAllPermissions, { once: true, passive: true });
+    });
 
-    // Detect if running as PWA
-    window.addEventListener('load', () => {
+    // PWA detection
+    window.addEventListener('DOMContentLoaded', () => {
       const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
-                    window.navigator.standalone === true;
+                    window.navigator.standalone === true ||
+                    document.referrer.includes('android-app://');
       
       if (isPWA) {
         console.log('📱 Running as PWA');
@@ -126,25 +142,115 @@
       } else {
         console.log('🌐 Running in browser');
       }
-    });
-
-    // Prevent page unload during playback
-    window.addEventListener('beforeunload', (e) => {
-      const audio = document.getElementById('audio');
-      if (audio && !audio.paused) {
-        // Some browsers will show a confirmation dialog
-        e.preventDefault();
-        e.returnValue = '';
+      
+      if ('getBattery' in navigator) {
+        navigator.getBattery().then(battery => {
+          console.log('🔋', Math.round(battery.level * 100) + '%', battery.charging ? '⚡' : '');
+        });
       }
     });
 
-    // Battery status logging (for debugging)
-    if ('getBattery' in navigator) {
-      navigator.getBattery().then(battery => {
-        console.log('🔋 Battery:', Math.round(battery.level * 100) + '%', battery.charging ? '⚡' : '');
+    // Monitor playback
+    document.addEventListener('DOMContentLoaded', () => {
+      const audio = document.getElementById('audio');
+      
+      audio.addEventListener('play', () => {
+        console.log('▶️ Playback started');
+        document.body.classList.add('playing');
       });
-    }
+      
+      audio.addEventListener('pause', () => {
+        console.log('⏸️ Playback paused');
+        document.body.classList.remove('playing');
+      });
+      
+      audio.addEventListener('ended', () => {
+        console.log('🏁 Playback ended');
+      });
+    });
+
+    // Visibility handling
+    document.addEventListener('visibilitychange', () => {
+      const audio = document.getElementById('audio');
+      if (audio && !audio.paused) {
+        if (document.hidden) {
+          console.log('📱 Screen off - music continues (Spotify mode)');
+        } else {
+          console.log('📱 Screen on');
+        }
+      }
+    });
+
+    // Prevent pull-to-refresh (can interrupt playback)
+    let startY = 0;
+    document.addEventListener('touchstart', e => {
+      startY = e.touches[0].clientY;
+    }, { passive: true });
+    
+    document.addEventListener('touchmove', e => {
+      const y = e.touches[0].clientY;
+      if (window.scrollY === 0 && y > startY) {
+        e.preventDefault();
+      }
+    }, { passive: false });
   </script>
+
+  <style>
+    /* Prevent text selection and zoom that can pause audio */
+    body {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      -khtml-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      touch-action: manipulation; /* Prevent double-tap zoom */
+    }
+    
+    input, textarea {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+    
+    body {
+      overscroll-behavior-y: contain;
+      overflow-x: hidden;
+    }
+    
+    /* Prevent zoom on song cards */
+    .song-card {
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    
+    .song-card img {
+      pointer-events: none; /* Prevent accidental zoom on image */
+      touch-action: manipulation;
+    }
+    
+    /* Remove white bar at bottom */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      position: fixed;
+      overflow: hidden;
+    }
+    
+    .app {
+      height: 100vh;
+      height: 100dvh; /* Use dynamic viewport height */
+      overflow: hidden;
+    }
+    
+    .content {
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+  </style>
 </head>
 
 <body class="light-theme">
@@ -195,7 +301,7 @@
       <div class="thumb-placeholder"></div>
       <div class="info">
         <h4 id="player-title">Select a song</h4>
-        <audio id="audio" preload="metadata" crossorigin="anonymous"></audio>
+        <audio id="audio" preload="auto" crossorigin="anonymous"></audio>
         <input type="range" id="seek" value="0" max="100" class="seek-bar" aria-label="Seek" />
       </div>
 

@@ -1,4 +1,4 @@
-// scripts/player.js - Enhanced Background Playback
+// scripts/player.js - Fixed: No Wake Lock, Smooth Fades, Zoom Issue
 import { auth, db } from "./firebase-config.js";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
@@ -17,7 +17,6 @@ const profileBtn = document.getElementById('profile-btn');
 
 let currentSong = null;
 let repeat = 'off';
-let wakeLock = null;
 let songPlayStartTime = 0;
 let totalListenedTime = 0;
 let hasCountedSong = false;
@@ -28,82 +27,95 @@ let currentIndex = 0;
 let keepAliveInterval = null;
 let audioContext = null;
 let sourceNode = null;
-let isBackgrounded = false;
+let gainNode = null;
+let isInitialized = false;
 
-audio.volume = 0;
+audio.volume = 0; // Start at 0 for smooth fade in
 
 // ===========================
 // AUDIO CONTEXT SETUP
 // ===========================
 function initAudioContext() {
-  if (!audioContext) {
-    try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      audioContext = new AudioContextClass();
-      
-      // Connect audio element to context
-      if (!sourceNode) {
-        sourceNode = audioContext.createMediaElementSource(audio);
-        sourceNode.connect(audioContext.destination);
-      }
-      
-      console.log('🎧 Audio Context initialized');
-    } catch (e) {
-      console.error('Audio Context failed:', e);
+  if (isInitialized) {
+    if (audioContext && audioContext.state === 'suspended') {
+      audioContext.resume().catch(e => console.log('Resume failed:', e));
     }
+    return;
   }
-  
-  // Always try to resume if suspended
-  if (audioContext && audioContext.state === 'suspended') {
-    audioContext.resume().then(() => {
-      console.log('▶️ Audio Context resumed');
+
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    audioContext = new AudioContextClass({
+      latencyHint: 'playback',
+      sampleRate: 44100
     });
+    
+    gainNode = audioContext.createGain();
+    gainNode.gain.value = 1.0;
+    
+    sourceNode = audioContext.createMediaElementSource(audio);
+    sourceNode.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    isInitialized = true;
+    console.log('🎧 Audio Context initialized:', audioContext.state);
+    
+    if (audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+  } catch (e) {
+    console.error('Audio Context init failed:', e);
   }
 }
 
+function forceResumeAudioContext() {
+  if (audioContext && audioContext.state !== 'running') {
+    audioContext.resume().then(() => {
+      console.log('▶️ Audio Context resumed');
+    }).catch(e => console.log('Resume failed:', e));
+  }
+}
+
+['touchstart', 'touchend', 'click', 'keydown'].forEach(event => {
+  document.addEventListener(event, forceResumeAudioContext, { once: false, passive: true });
+});
+
 // ===========================
-// KEEP ALIVE SYSTEM
+// KEEP ALIVE - NO WAKE LOCK
 // ===========================
 function startKeepAlive() {
   if (keepAliveInterval) return;
   
-  console.log('💓 Starting keep-alive system');
+  console.log('💓 Keep-alive started (no wake lock - screen can sleep)');
   
   keepAliveInterval = setInterval(() => {
-    // 1. Ping service worker
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      const channel = new MessageChannel();
-      navigator.serviceWorker.controller.postMessage({
-        type: 'PLAYBACK_ACTIVE',
-        timestamp: Date.now(),
-        song: currentSong?.title
-      }, [channel.port2]);
-      
-      channel.port1.onmessage = (e) => {
-        if (e.data.received) {
-          console.log('✅ Service worker alive');
-        }
-      };
-    }
-    
-    // 2. Resume audio context if suspended
     if (audioContext) {
       if (audioContext.state === 'suspended') {
-        audioContext.resume();
-        console.log('🔄 Audio context resumed from keep-alive');
+        audioContext.resume().catch(e => {});
+      }
+      
+      const state = audioContext.state;
+      if (state === 'running' && !audio.paused) {
+        if (audio.readyState >= 2) {
+          audio.volume = audio.volume;
+        }
       }
     }
     
-    // 3. Touch audio element to prevent GC
-    if (!audio.paused && audio.readyState >= 2) {
-      const currentTime = audio.currentTime;
-      audio.currentTime = currentTime;
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      try {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'PLAYBACK_ACTIVE',
+          timestamp: Date.now()
+        });
+      } catch (e) {
+        console.log('SW ping failed:', e);
+      }
     }
     
-    // 4. Update media session
     updatePositionState();
     
-  }, 3000); // Every 3 seconds
+  }, 2000);
 }
 
 function stopKeepAlive() {
@@ -118,11 +130,25 @@ function stopKeepAlive() {
 // MEDIA SESSION API
 // ===========================
 if ('mediaSession' in navigator) {
-  // Set up all handlers
-  navigator.mediaSession.setActionHandler('play', () => play());
-  navigator.mediaSession.setActionHandler('pause', () => pause());
-  navigator.mediaSession.setActionHandler('nexttrack', () => playNextSong());
-  navigator.mediaSession.setActionHandler('previoustrack', () => playPreviousSong());
+  navigator.mediaSession.setActionHandler('play', () => {
+    console.log('Media Session: play');
+    play();
+  });
+  
+  navigator.mediaSession.setActionHandler('pause', () => {
+    console.log('Media Session: pause');
+    pause();
+  });
+  
+  navigator.mediaSession.setActionHandler('nexttrack', () => {
+    console.log('Media Session: next');
+    playNextSong();
+  });
+  
+  navigator.mediaSession.setActionHandler('previoustrack', () => {
+    console.log('Media Session: previous');
+    playPreviousSong();
+  });
   
   navigator.mediaSession.setActionHandler('seekto', (details) => {
     if (details.seekTime != null && audio.duration) {
@@ -131,19 +157,7 @@ if ('mediaSession' in navigator) {
     }
   });
   
-  navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-    const skipTime = details.seekOffset || 10;
-    audio.currentTime = Math.max(audio.currentTime - skipTime, 0);
-    updatePositionState();
-  });
-  
-  navigator.mediaSession.setActionHandler('seekforward', (details) => {
-    const skipTime = details.seekOffset || 10;
-    audio.currentTime = Math.min(audio.currentTime + skipTime, audio.duration);
-    updatePositionState();
-  });
-  
-  console.log('🎛️ Media Session API configured');
+  console.log('🎛️ Media Session configured');
 }
 
 function updateMediaSession(song) {
@@ -163,6 +177,8 @@ function updateMediaSession(song) {
       album: song.genre || 'MelodyTunes',
       artwork: artwork
     });
+    
+    console.log('📝 Media Session updated:', song.title);
   }
 }
 
@@ -173,53 +189,64 @@ function updatePositionState() {
         navigator.mediaSession.setPositionState({
           duration: audio.duration,
           playbackRate: audio.playbackRate,
-          position: audio.currentTime || 0
+          position: Math.min(audio.currentTime || 0, audio.duration)
         });
       }
-    } catch (e) {
-      // Silently fail - some browsers don't support this yet
-    }
+    } catch (e) {}
   }
 }
 
 function setPlaybackState(state) {
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = state;
-    console.log('🎵 Playback state:', state);
   }
 }
 
 // ===========================
-// WAKE LOCK
+// VISIBILITY CHANGE HANDLER
 // ===========================
-async function requestWakeLock() {
-  try {
-    if ('wakeLock' in navigator) {
-      wakeLock = await navigator.wakeLock.request('screen');
-      console.log('🔒 Wake lock acquired');
-      
-      wakeLock.addEventListener('release', () => {
-        console.log('🔓 Wake lock released');
-      });
-    }
-  } catch (e) {
-    console.warn('Wake lock failed:', e);
-  }
-}
-
-function releaseWakeLock() {
-  if (wakeLock) {
-    wakeLock.release().then(() => {
-      wakeLock = null;
-      console.log('Wake lock released manually');
-    });
-  }
-}
-
-// Re-acquire wake lock when page becomes visible
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible' && !audio.paused) {
-    await requestWakeLock();
+  const isHidden = document.hidden || document.visibilityState === 'hidden';
+  
+  console.log('👁️ Visibility:', isHidden ? 'HIDDEN' : 'VISIBLE');
+  
+  if (isHidden) {
+    if (!audio.paused) {
+      console.log('📱 Screen off/backgrounded - music continues (Spotify mode)');
+      
+      if (audioContext && audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      
+      startKeepAlive();
+      setPlaybackState('playing');
+      updatePositionState();
+    }
+  } else {
+    if (!audio.paused) {
+      console.log('📱 Screen on/foregrounded');
+      
+      if (audioContext && audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      
+      updatePositionState();
+    }
+  }
+});
+
+document.addEventListener('freeze', () => {
+  console.log('❄️ Page frozen');
+  if (!audio.paused && audioContext) {
+    audioContext.resume().catch(e => {});
+  }
+});
+
+document.addEventListener('resume', () => {
+  console.log('🔥 Page resumed');
+  if (!audio.paused && audioContext) {
+    audioContext.resume().catch(e => {});
+    updatePositionState();
   }
 });
 
@@ -239,18 +266,20 @@ function hidePlayer() {
 }
 
 // ===========================
-// FADE IN/OUT
+// SMOOTH FADE IN/OUT
 // ===========================
 function fadeIn() {
   if (fadeInterval) clearInterval(fadeInterval);
   
   audio.volume = 0;
-  const fadeDuration = 15000;
-  const steps = 150;
+  const fadeDuration = 20000; // 20 seconds for very smooth fade in
+  const steps = 200;
   const stepDuration = fadeDuration / steps;
   const volumeIncrement = targetVolume / steps;
   
   let currentStep = 0;
+  
+  console.log('🔊 Fading in over 20 seconds...');
   
   fadeInterval = setInterval(() => {
     currentStep++;
@@ -259,6 +288,7 @@ function fadeIn() {
     if (currentStep >= steps) {
       clearInterval(fadeInterval);
       fadeInterval = null;
+      console.log('✅ Fade in complete');
     }
   }, stepDuration);
 }
@@ -266,13 +296,15 @@ function fadeIn() {
 function fadeOut(callback) {
   if (fadeInterval) clearInterval(fadeInterval);
   
-  const fadeDuration = 8000;
-  const steps = 80;
+  const fadeDuration = 10000; // 10 seconds for smooth fade out
+  const steps = 100;
   const stepDuration = fadeDuration / steps;
   const startVolume = audio.volume;
   const volumeDecrement = startVolume / steps;
   
   let currentStep = 0;
+  
+  console.log('🔉 Fading out over 10 seconds...');
   
   fadeInterval = setInterval(() => {
     currentStep++;
@@ -281,6 +313,7 @@ function fadeOut(callback) {
     if (currentStep >= steps || audio.volume <= 0) {
       clearInterval(fadeInterval);
       fadeInterval = null;
+      console.log('✅ Fade out complete');
       if (callback) callback();
     }
   }, stepDuration);
@@ -293,7 +326,7 @@ export const player = {
   setPlaylist(songs, index = 0) {
     playlist = songs;
     currentIndex = index;
-    console.log('📝 Playlist set:', songs.length, 'songs');
+    console.log('📝 Playlist:', songs.length, 'songs');
   },
   
   async playSong(song) {
@@ -304,45 +337,75 @@ export const player = {
     totalListenedTime = 0;
     hasCountedSong = false;
 
-    // Initialize audio context
     initAudioContext();
+    await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Configure audio element
     audio.crossOrigin = 'anonymous';
     audio.preload = 'auto';
+    audio.autoplay = false;
     audio.src = song.link;
+    
+    // Start at 0 for fade in
+    audio.volume = 0;
+    
     titleEl.textContent = song.title;
 
-    // Set thumbnail
     const thumbUrl = song.thumbnail || '';
     thumbEl.style.backgroundImage = `url(${thumbUrl})`;
     thumbEl.style.backgroundSize = 'cover';
     thumbEl.style.backgroundPosition = 'center';
 
-    // Handle thumbnail errors
-    const img = new Image();
-    img.onerror = () => {
-      thumbEl.style.backgroundImage = `url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2748%27 height=%2748%27%3E%3Crect width=%27100%25%27 height=%27100%25%27 fill=%27%23333%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 font-size=%2714%27 fill=%27%23999%27 text-anchor=%27middle%27 dy=%27.3em%27%3E♪%3C/text%3E%3C/svg%3E')`;
-    };
-    img.src = thumbUrl;
-
-    // Update Media Session
     updateMediaSession(song);
     showPlayer();
 
-    // Play audio
+    const playWhenReady = () => {
+      return new Promise((resolve, reject) => {
+        if (audio.readyState >= 2) {
+          resolve();
+        } else {
+          audio.addEventListener('canplay', resolve, { once: true });
+          audio.addEventListener('error', reject, { once: true });
+          setTimeout(() => reject(new Error('Timeout')), 10000);
+        }
+      });
+    };
+
     try {
+      audio.load();
+      await playWhenReady();
+      
+      if (audioContext && audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      
       await audio.play();
+      
+      console.log('✅ Playback started');
+      
       playBtn.textContent = 'pause';
       songPlayStartTime = Date.now();
+      
+      // Start smooth fade in
       fadeIn();
-      await requestWakeLock();
+      
       startKeepAlive();
       setPlaybackState('playing');
       updatePositionState();
+      
     } catch (e) {
-      console.error('Playback failed:', e);
-      alert('Failed to play. Check your connection.');
+      console.error('❌ Play failed:', e);
+      
+      try {
+        await audio.play();
+        playBtn.textContent = 'pause';
+        songPlayStartTime = Date.now();
+        fadeIn();
+        startKeepAlive();
+        setPlaybackState('playing');
+      } catch (e2) {
+        console.error('❌ Retry failed:', e2);
+        alert('Playback failed. Check connection.');
+      }
     }
   }
 };
@@ -353,21 +416,36 @@ export const player = {
 function play() {
   initAudioContext();
   
-  audio.play().then(() => {
-    playBtn.textContent = 'pause';
-    songPlayStartTime = Date.now();
-    
-    if (audio.currentTime < 15) {
-      fadeIn();
-    }
-    
-    requestWakeLock();
-    startKeepAlive();
-    setPlaybackState('playing');
-    updatePositionState();
-  }).catch(e => {
-    console.error('Play failed:', e);
-  });
+  if (audioContext && audioContext.state === 'suspended') {
+    audioContext.resume().then(() => {
+      audio.play().then(() => {
+        playBtn.textContent = 'pause';
+        songPlayStartTime = Date.now();
+        
+        // Fade in if starting from beginning
+        if (audio.currentTime < 5) {
+          fadeIn();
+        }
+        
+        startKeepAlive();
+        setPlaybackState('playing');
+        updatePositionState();
+      }).catch(e => console.error('Play failed:', e));
+    });
+  } else {
+    audio.play().then(() => {
+      playBtn.textContent = 'pause';
+      songPlayStartTime = Date.now();
+      
+      if (audio.currentTime < 5) {
+        fadeIn();
+      }
+      
+      startKeepAlive();
+      setPlaybackState('playing');
+      updatePositionState();
+    }).catch(e => console.error('Play failed:', e));
+  }
 }
 
 function pause() {
@@ -382,7 +460,6 @@ function pause() {
   }
   
   if (fadeInterval) clearInterval(fadeInterval);
-  releaseWakeLock();
   stopKeepAlive();
   setPlaybackState('paused');
 }
@@ -431,13 +508,16 @@ repeatBtn.parentElement.onclick = () => {
 // AUDIO EVENT HANDLERS
 // ===========================
 audio.ontimeupdate = () => {
-  if (audio.duration) {
+  if (audio.duration && !isNaN(audio.duration)) {
     seekBar.value = (audio.currentTime / audio.duration) * 100;
-    updatePositionState();
     
-    // Fade out before end
+    if (Math.floor(audio.currentTime) % 5 === 0) {
+      updatePositionState();
+    }
+    
+    // Start fade-out 10 seconds before end
     const timeRemaining = audio.duration - audio.currentTime;
-    if (timeRemaining <= 8 && timeRemaining > 7.9 && !fadeInterval && audio.volume > 0) {
+    if (timeRemaining <= 10 && timeRemaining > 9.9 && !fadeInterval && audio.volume > 0) {
       fadeOut(() => {
         if (repeat === 'one') {
           audio.currentTime = 0;
@@ -450,19 +530,20 @@ audio.ontimeupdate = () => {
     }
   }
 
-  // Check for 90 second threshold
   if (!hasCountedSong && !audio.paused && songPlayStartTime > 0) {
     const currentSessionTime = (Date.now() - songPlayStartTime) / 1000;
     const totalTime = totalListenedTime + currentSessionTime;
     
     if (totalTime >= 90) {
       hasCountedSong = true;
-      console.log('✅ 90s threshold reached');
+      console.log('✅ 90s threshold');
     }
   }
 };
 
 audio.onended = () => {
+  console.log('🏁 Song ended');
+  
   if (fadeInterval) clearInterval(fadeInterval);
   
   if (songPlayStartTime > 0) {
@@ -474,7 +555,7 @@ audio.onended = () => {
   if (hasCountedSong && totalListenedTime >= 90) {
     const exactMinutes = totalListenedTime / 60;
     const roundedMinutes = Math.round(exactMinutes * 2) / 2;
-    console.log('🎵 Song ended:', roundedMinutes, 'min');
+    console.log('📊 Stats:', roundedMinutes, 'min');
     updateUserStats(roundedMinutes);
   }
   
@@ -485,46 +566,45 @@ audio.onended = () => {
     hasCountedSong = false;
     audio.play().then(() => fadeIn());
   } else {
-    playNextSong();
+    setTimeout(() => playNextSong(), 500);
   }
 };
 
 audio.onpause = () => {
   if (fadeInterval) clearInterval(fadeInterval);
-  if (audio.currentTime === 0 || audio.ended) {
-    hidePlayer();
-  }
 };
 
 audio.onerror = (e) => {
-  console.error('Audio error:', e);
+  console.error('❌ Audio error:', audio.error);
   stopKeepAlive();
   
-  // Auto-recover
   setTimeout(() => {
     if (playlist.length > 0) {
-      console.log('🔄 Auto-recovery: playing next');
+      console.log('🔄 Error recovery: next song');
       playNextSong();
     }
-  }, 2000);
+  }, 1000);
 };
 
 audio.onwaiting = () => {
   console.log('⏳ Buffering...');
+  if (audioContext && audioContext.state === 'suspended') {
+    audioContext.resume();
+  }
 };
 
 audio.oncanplay = () => {
-  console.log('✅ Can play');
+  console.log('✅ Ready to play');
 };
 
 audio.onloadedmetadata = () => {
-  console.log('📊 Metadata loaded, duration:', audio.duration);
+  console.log('📊 Duration:', audio.duration?.toFixed(1), 's');
   updatePositionState();
 };
 
 // Seek bar
 seekBar.oninput = () => {
-  if (audio.duration) {
+  if (audio.duration && !isNaN(audio.duration)) {
     audio.currentTime = (seekBar.value / 100) * audio.duration;
     updatePositionState();
   }
@@ -534,7 +614,8 @@ seekBar.oninput = () => {
 // PLAYLIST NAVIGATION
 // ===========================
 function playNextSong() {
-  // Count current song if eligible
+  console.log('⏭️ Next song');
+  
   if (hasCountedSong && songPlayStartTime > 0) {
     const sessionTime = (Date.now() - songPlayStartTime) / 1000;
     totalListenedTime += sessionTime;
@@ -542,7 +623,6 @@ function playNextSong() {
     if (totalListenedTime >= 90) {
       const exactMinutes = totalListenedTime / 60;
       const roundedMinutes = Math.round(exactMinutes * 2) / 2;
-      console.log('⏭️ Next. Total:', roundedMinutes, 'min');
       updateUserStats(roundedMinutes);
     }
   }
@@ -563,6 +643,8 @@ function playNextSong() {
 }
 
 function playPreviousSong() {
+  console.log('⏮️ Previous song');
+  
   if (audio.currentTime > 3) {
     audio.currentTime = 0;
     songPlayStartTime = Date.now();
@@ -604,49 +686,9 @@ async function updateUserStats(minutesListened) {
     });
     console.log('✅ Stats: +1 song, +' + minutesListened + ' min');
   } catch (e) {
-    console.error('Stats update failed:', e);
+    console.error('Stats failed:', e);
   }
 }
-
-// ===========================
-// VISIBILITY HANDLING
-// ===========================
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') {
-    isBackgrounded = true;
-    if (!audio.paused) {
-      console.log('📱 App backgrounded, maintaining playback');
-      startKeepAlive();
-      
-      // Ensure audio context stays active
-      if (audioContext && audioContext.state === 'suspended') {
-        audioContext.resume();
-      }
-    }
-  } else {
-    isBackgrounded = false;
-    if (!audio.paused) {
-      console.log('📱 App foregrounded');
-      updatePositionState();
-    }
-  }
-});
-
-// Handle screen lock/unlock
-document.addEventListener('freeze', () => {
-  console.log('❄️ Page frozen');
-  if (!audio.paused) {
-    startKeepAlive();
-  }
-});
-
-document.addEventListener('resume', () => {
-  console.log('🔥 Page resumed');
-  if (!audio.paused && audioContext) {
-    audioContext.resume();
-    updatePositionState();
-  }
-});
 
 // ===========================
 // AUTH & PROFILE
@@ -673,4 +715,4 @@ onAuthStateChanged(auth, user => {
   };
 });
 
-console.log('🎵 Player module loaded with background playback support');
+console.log('🎵 Player loaded - Spotify mode (no wake lock)');
