@@ -1,4 +1,4 @@
-// scripts/player.js - BUFFERING FIX: No volume changes during playback
+// scripts/player.js - FIX: Remove periodic lag/stutter
 import { auth, db } from "./firebase-config.js";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
@@ -30,7 +30,6 @@ let gainNode = null;
 let isInitialized = false;
 let isFading = false;
 
-// CRITICAL: Start at full volume to prevent buffering
 audio.volume = 1.0;
 
 // ===========================
@@ -39,7 +38,7 @@ audio.volume = 1.0;
 function initAudioContext() {
   if (isInitialized) {
     if (audioContext && audioContext.state === 'suspended') {
-      audioContext.resume().catch(e => console.log('Resume failed:', e));
+      audioContext.resume().catch(e => {});
     }
     return;
   }
@@ -48,10 +47,9 @@ function initAudioContext() {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     audioContext = new AudioContextClass({
       latencyHint: 'playback',
-      sampleRate: 44100
+      sampleRate: 48000
     });
     
-    // Use gain node for smooth fading without touching audio.volume
     gainNode = audioContext.createGain();
     gainNode.gain.value = 1.0;
     
@@ -60,21 +58,19 @@ function initAudioContext() {
     gainNode.connect(audioContext.destination);
     
     isInitialized = true;
-    console.log('🎧 Audio Context initialized with Gain Node');
+    console.log('🎧 Audio Context initialized');
     
     if (audioContext.state === 'suspended') {
       audioContext.resume();
     }
   } catch (e) {
-    console.error('Audio Context init failed:', e);
+    console.error('Audio Context failed:', e);
   }
 }
 
 function forceResumeAudioContext() {
   if (audioContext && audioContext.state !== 'running') {
-    audioContext.resume().then(() => {
-      console.log('▶️ Audio Context resumed');
-    }).catch(e => {});
+    audioContext.resume().catch(e => {});
   }
 }
 
@@ -83,31 +79,22 @@ function forceResumeAudioContext() {
 });
 
 // ===========================
-// KEEP ALIVE
+// KEEP ALIVE - NON-INTRUSIVE (FIX FOR 5-SECOND LAG)
 // ===========================
 function startKeepAlive() {
   if (keepAliveInterval) return;
   
-  console.log('💓 Keep-alive started');
+  console.log('💓 Keep-alive started (non-intrusive)');
   
   keepAliveInterval = setInterval(() => {
-    if (audioContext) {
-      if (audioContext.state === 'suspended') {
-        audioContext.resume().catch(e => {});
-      }
-      
-      const state = audioContext.state;
-      if (state === 'running' && !audio.paused) {
-        if (audio.readyState >= 2) {
-          // Touch current time without changing it
-          const ct = audio.currentTime;
-          if (ct > 0) {
-            audio.currentTime = ct;
-          }
-        }
-      }
+    // CRITICAL: Only check state, don't touch audio element during playback!
+    
+    // 1. Resume audio context if suspended (don't do anything if running)
+    if (audioContext && audioContext.state === 'suspended') {
+      audioContext.resume().catch(e => {});
     }
     
+    // 2. Service worker ping (doesn't interrupt playback)
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
       try {
         navigator.serviceWorker.controller.postMessage({
@@ -117,9 +104,10 @@ function startKeepAlive() {
       } catch (e) {}
     }
     
-    updatePositionState();
+    // 3. REMOVED: Don't touch audio properties during playback
+    // 4. REMOVED: Don't update position state every interval
     
-  }, 2000);
+  }, 5000); // Run every 5 seconds but don't interrupt
 }
 
 function stopKeepAlive() {
@@ -142,11 +130,10 @@ if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('seekto', (details) => {
     if (details.seekTime != null && audio.duration) {
       audio.currentTime = details.seekTime;
-      updatePositionState();
     }
   });
   
-  console.log('🎛️ Media Session configured');
+  console.log('🎛️ Media Session ready');
 }
 
 function updateMediaSession(song) {
@@ -195,43 +182,24 @@ function setPlaybackState(state) {
 document.addEventListener('visibilitychange', async () => {
   const isHidden = document.hidden || document.visibilityState === 'hidden';
   
-  console.log('👁️ Visibility:', isHidden ? 'HIDDEN' : 'VISIBLE');
-  
   if (isHidden) {
     if (!audio.paused) {
-      console.log('📱 Screen off - music continues');
+      console.log('📱 Backgrounded');
       
       if (audioContext && audioContext.state === 'suspended') {
         await audioContext.resume();
       }
       
-      startKeepAlive();
       setPlaybackState('playing');
-      updatePositionState();
     }
   } else {
     if (!audio.paused) {
-      console.log('📱 Screen on');
+      console.log('📱 Foregrounded');
       
       if (audioContext && audioContext.state === 'suspended') {
         await audioContext.resume();
       }
-      
-      updatePositionState();
     }
-  }
-});
-
-document.addEventListener('freeze', () => {
-  if (!audio.paused && audioContext) {
-    audioContext.resume().catch(e => {});
-  }
-});
-
-document.addEventListener('resume', () => {
-  if (!audio.paused && audioContext) {
-    audioContext.resume().catch(e => {});
-    updatePositionState();
   }
 });
 
@@ -254,26 +222,22 @@ function hidePlayer() {
 // SMOOTH FADE USING GAIN NODE
 // ===========================
 function fadeIn() {
-  if (!gainNode) {
-    console.log('⚠️ Gain node not available, skipping fade');
-    return;
-  }
+  if (!gainNode) return;
   
   if (fadeInterval) clearInterval(fadeInterval);
   isFading = true;
   
-  // CRITICAL: Keep audio.volume at 1.0, use gainNode instead
   audio.volume = 1.0;
   gainNode.gain.value = 0;
   
-  const fadeDuration = 20000; // 20 seconds
+  const fadeDuration = 20000;
   const steps = 200;
   const stepDuration = fadeDuration / steps;
   const gainIncrement = 1.0 / steps;
   
   let currentStep = 0;
   
-  console.log('🔊 Fading in (Gain Node, 20s)...');
+  console.log('🔊 Fade in (20s)');
   
   fadeInterval = setInterval(() => {
     currentStep++;
@@ -283,14 +247,12 @@ function fadeIn() {
       clearInterval(fadeInterval);
       fadeInterval = null;
       isFading = false;
-      console.log('✅ Fade in complete');
     }
   }, stepDuration);
 }
 
 function fadeOut(callback) {
   if (!gainNode) {
-    console.log('⚠️ Gain node not available, skipping fade');
     if (callback) callback();
     return;
   }
@@ -298,10 +260,9 @@ function fadeOut(callback) {
   if (fadeInterval) clearInterval(fadeInterval);
   isFading = true;
   
-  // CRITICAL: Keep audio.volume at 1.0, use gainNode instead
   audio.volume = 1.0;
   
-  const fadeDuration = 10000; // 10 seconds
+  const fadeDuration = 10000;
   const steps = 100;
   const stepDuration = fadeDuration / steps;
   const startGain = gainNode.gain.value;
@@ -309,7 +270,7 @@ function fadeOut(callback) {
   
   let currentStep = 0;
   
-  console.log('🔉 Fading out (Gain Node, 10s)...');
+  console.log('🔉 Fade out (10s)');
   
   fadeInterval = setInterval(() => {
     currentStep++;
@@ -319,7 +280,6 @@ function fadeOut(callback) {
       clearInterval(fadeInterval);
       fadeInterval = null;
       isFading = false;
-      console.log('✅ Fade out complete');
       if (callback) callback();
     }
   }, stepDuration);
@@ -332,7 +292,7 @@ export const player = {
   setPlaylist(songs, index = 0) {
     playlist = songs;
     currentIndex = index;
-    console.log('📝 Playlist:', songs.length, 'songs');
+    console.log('📝 Playlist:', songs.length);
   },
   
   async playSong(song) {
@@ -343,17 +303,13 @@ export const player = {
     totalListenedTime = 0;
     hasCountedSong = false;
 
-    // CRITICAL: Initialize audio context FIRST
     initAudioContext();
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 50));
 
-    // CRITICAL: Configure audio element properly
     audio.crossOrigin = 'anonymous';
     audio.preload = 'auto';
     audio.autoplay = false;
     audio.src = song.link;
-    
-    // CRITICAL: Keep volume at 1.0 always (use gain node for fading)
     audio.volume = 1.0;
     
     titleEl.textContent = song.title;
@@ -368,69 +324,50 @@ export const player = {
 
     const playWhenReady = () => {
       return new Promise((resolve, reject) => {
-        if (audio.readyState >= 2) {
+        if (audio.readyState >= 3) {
           resolve();
         } else {
           const canplayHandler = () => {
-            audio.removeEventListener('canplay', canplayHandler);
+            audio.removeEventListener('canplaythrough', canplayHandler);
             audio.removeEventListener('error', errorHandler);
             resolve();
           };
           const errorHandler = () => {
-            audio.removeEventListener('canplay', canplayHandler);
+            audio.removeEventListener('canplaythrough', canplayHandler);
             audio.removeEventListener('error', errorHandler);
             reject(new Error('Load failed'));
           };
           
-          audio.addEventListener('canplay', canplayHandler, { once: true });
+          audio.addEventListener('canplaythrough', canplayHandler, { once: true });
           audio.addEventListener('error', errorHandler, { once: true });
-          setTimeout(() => reject(new Error('Timeout')), 10000);
+          setTimeout(() => reject(new Error('Timeout')), 15000);
         }
       });
     };
 
     try {
-      // Load audio
       audio.load();
-      
-      // Wait until ready
       await playWhenReady();
       
-      // Resume audio context
       if (audioContext && audioContext.state === 'suspended') {
         await audioContext.resume();
       }
       
-      // Play
       await audio.play();
       
-      console.log('✅ Playback started');
+      console.log('✅ Playing');
       
       playBtn.textContent = 'pause';
       songPlayStartTime = Date.now();
       
-      // Start smooth fade in using GAIN NODE (not audio.volume)
       fadeIn();
-      
       startKeepAlive();
       setPlaybackState('playing');
       updatePositionState();
       
     } catch (e) {
       console.error('❌ Play failed:', e);
-      
-      // Retry once
-      try {
-        await audio.play();
-        playBtn.textContent = 'pause';
-        songPlayStartTime = Date.now();
-        fadeIn();
-        startKeepAlive();
-        setPlaybackState('playing');
-      } catch (e2) {
-        console.error('❌ Retry failed:', e2);
-        alert('Playback failed. Check your connection.');
-      }
+      alert('Playback failed. Check connection.');
     }
   }
 };
@@ -447,14 +384,12 @@ function play() {
         playBtn.textContent = 'pause';
         songPlayStartTime = Date.now();
         
-        // Fade in if near start
         if (audio.currentTime < 5 && gainNode) {
           fadeIn();
         }
         
         startKeepAlive();
         setPlaybackState('playing');
-        updatePositionState();
       }).catch(e => console.error('Play failed:', e));
     });
   } else {
@@ -468,7 +403,6 @@ function play() {
       
       startKeepAlive();
       setPlaybackState('playing');
-      updatePositionState();
     }).catch(e => console.error('Play failed:', e));
   }
 }
@@ -481,7 +415,6 @@ function pause() {
     const sessionTime = (Date.now() - songPlayStartTime) / 1000;
     totalListenedTime += sessionTime;
     songPlayStartTime = 0;
-    console.log('⏸️ Paused. Total:', totalListenedTime.toFixed(2), 's');
   }
   
   if (fadeInterval) {
@@ -535,9 +468,7 @@ audio.ontimeupdate = () => {
   if (audio.duration && !isNaN(audio.duration)) {
     seekBar.value = (audio.currentTime / audio.duration) * 100;
     
-    if (Math.floor(audio.currentTime) % 5 === 0) {
-      updatePositionState();
-    }
+    // REMOVED: Don't update position state every time, only on seek
     
     // Start fade-out 10 seconds before end
     const timeRemaining = audio.duration - audio.currentTime;
@@ -561,14 +492,11 @@ audio.ontimeupdate = () => {
     
     if (totalTime >= 90) {
       hasCountedSong = true;
-      console.log('✅ 90s threshold');
     }
   }
 };
 
 audio.onended = () => {
-  console.log('🏁 Song ended');
-  
   if (fadeInterval) {
     clearInterval(fadeInterval);
     isFading = false;
@@ -583,7 +511,6 @@ audio.onended = () => {
   if (hasCountedSong && totalListenedTime >= 90) {
     const exactMinutes = totalListenedTime / 60;
     const roundedMinutes = Math.round(exactMinutes * 2) / 2;
-    console.log('📊 Stats:', roundedMinutes, 'min');
     updateUserStats(roundedMinutes);
   }
   
@@ -612,32 +539,19 @@ audio.onerror = (e) => {
   
   setTimeout(() => {
     if (playlist.length > 0) {
-      console.log('🔄 Error recovery: next song');
       playNextSong();
     }
   }, 1000);
 };
 
-audio.onwaiting = () => {
-  console.log('⏳ Buffering...');
-  if (audioContext && audioContext.state === 'suspended') {
-    audioContext.resume();
-  }
-};
-
-audio.oncanplay = () => {
-  console.log('✅ Ready to play');
-};
-
 audio.onloadedmetadata = () => {
-  console.log('📊 Duration:', audio.duration?.toFixed(1), 's');
   updatePositionState();
 };
 
 seekBar.oninput = () => {
   if (audio.duration && !isNaN(audio.duration)) {
     audio.currentTime = (seekBar.value / 100) * audio.duration;
-    updatePositionState();
+    updatePositionState(); // Only update on manual seek
   }
 };
 
@@ -645,8 +559,6 @@ seekBar.oninput = () => {
 // PLAYLIST NAVIGATION
 // ===========================
 function playNextSong() {
-  console.log('⏭️ Next song');
-  
   if (hasCountedSong && songPlayStartTime > 0) {
     const sessionTime = (Date.now() - songPlayStartTime) / 1000;
     totalListenedTime += sessionTime;
@@ -674,8 +586,6 @@ function playNextSong() {
 }
 
 function playPreviousSong() {
-  console.log('⏮️ Previous song');
-  
   if (audio.currentTime > 3) {
     audio.currentTime = 0;
     songPlayStartTime = Date.now();
@@ -715,7 +625,6 @@ async function updateUserStats(minutesListened) {
         hour12: true
       }) + " IST"
     });
-    console.log('✅ Stats: +1 song, +' + minutesListened + ' min');
   } catch (e) {
     console.error('Stats failed:', e);
   }
@@ -746,4 +655,4 @@ onAuthStateChanged(auth, user => {
   };
 });
 
-console.log('🎵 Player loaded - BUFFERING FIXED (Gain Node method)');
+console.log('🎵 Player loaded - 5-second lag FIXED');
