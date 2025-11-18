@@ -1,4 +1,4 @@
-// scripts/player.js - FIX: Remove periodic lag/stutter
+// scripts/player.js - MINIMAL: Remove ALL periodic operations
 import { auth, db } from "./firebase-config.js";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
@@ -23,7 +23,6 @@ let hasCountedSong = false;
 let fadeInterval = null;
 let playlist = [];
 let currentIndex = 0;
-let keepAliveInterval = null;
 let audioContext = null;
 let sourceNode = null;
 let gainNode = null;
@@ -33,7 +32,7 @@ let isFading = false;
 audio.volume = 1.0;
 
 // ===========================
-// AUDIO CONTEXT SETUP
+// AUDIO CONTEXT SETUP (ONE TIME ONLY)
 // ===========================
 function initAudioContext() {
   if (isInitialized) {
@@ -58,7 +57,7 @@ function initAudioContext() {
     gainNode.connect(audioContext.destination);
     
     isInitialized = true;
-    console.log('🎧 Audio Context initialized');
+    console.log('🎧 Audio Context ready');
     
     if (audioContext.state === 'suspended') {
       audioContext.resume();
@@ -68,105 +67,38 @@ function initAudioContext() {
   }
 }
 
-function forceResumeAudioContext() {
-  if (audioContext && audioContext.state !== 'running') {
-    audioContext.resume().catch(e => {});
-  }
-}
-
-['touchstart', 'touchend', 'click', 'keydown'].forEach(event => {
-  document.addEventListener(event, forceResumeAudioContext, { once: false, passive: true });
+// Resume on user interaction (one time setup)
+['touchstart', 'click'].forEach(event => {
+  document.addEventListener(event, () => {
+    if (audioContext && audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+  }, { once: true, passive: true });
 });
 
 // ===========================
-// KEEP ALIVE - NON-INTRUSIVE (FIX FOR 5-SECOND LAG)
-// ===========================
-function startKeepAlive() {
-  if (keepAliveInterval) return;
-  
-  console.log('💓 Keep-alive started (non-intrusive)');
-  
-  keepAliveInterval = setInterval(() => {
-    // CRITICAL: Only check state, don't touch audio element during playback!
-    
-    // 1. Resume audio context if suspended (don't do anything if running)
-    if (audioContext && audioContext.state === 'suspended') {
-      audioContext.resume().catch(e => {});
-    }
-    
-    // 2. Service worker ping (doesn't interrupt playback)
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      try {
-        navigator.serviceWorker.controller.postMessage({
-          type: 'PLAYBACK_ACTIVE',
-          timestamp: Date.now()
-        });
-      } catch (e) {}
-    }
-    
-    // 3. REMOVED: Don't touch audio properties during playback
-    // 4. REMOVED: Don't update position state every interval
-    
-  }, 5000); // Run every 5 seconds but don't interrupt
-}
-
-function stopKeepAlive() {
-  if (keepAliveInterval) {
-    clearInterval(keepAliveInterval);
-    keepAliveInterval = null;
-    console.log('💔 Keep-alive stopped');
-  }
-}
-
-// ===========================
-// MEDIA SESSION API
+// MEDIA SESSION API (MINIMAL)
 // ===========================
 if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('play', () => play());
   navigator.mediaSession.setActionHandler('pause', () => pause());
   navigator.mediaSession.setActionHandler('nexttrack', () => playNextSong());
   navigator.mediaSession.setActionHandler('previoustrack', () => playPreviousSong());
-  
-  navigator.mediaSession.setActionHandler('seekto', (details) => {
-    if (details.seekTime != null && audio.duration) {
-      audio.currentTime = details.seekTime;
-    }
-  });
-  
   console.log('🎛️ Media Session ready');
 }
 
 function updateMediaSession(song) {
   if ('mediaSession' in navigator && song) {
     const artwork = song.thumbnail ? [
-      { src: song.thumbnail, sizes: '96x96', type: 'image/jpeg' },
-      { src: song.thumbnail, sizes: '128x128', type: 'image/jpeg' },
-      { src: song.thumbnail, sizes: '192x192', type: 'image/jpeg' },
-      { src: song.thumbnail, sizes: '256x256', type: 'image/jpeg' },
-      { src: song.thumbnail, sizes: '384x384', type: 'image/jpeg' },
       { src: song.thumbnail, sizes: '512x512', type: 'image/jpeg' }
     ] : [];
 
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: song.title || 'Unknown Title',
-      artist: song.artist || 'Unknown Artist',
-      album: song.genre || 'MelodyTunes',
+      title: song.title || 'Unknown',
+      artist: song.artist || 'Unknown',
+      album: song.genre || 'Music',
       artwork: artwork
     });
-  }
-}
-
-function updatePositionState() {
-  if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-    try {
-      if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
-        navigator.mediaSession.setPositionState({
-          duration: audio.duration,
-          playbackRate: audio.playbackRate,
-          position: Math.min(audio.currentTime || 0, audio.duration)
-        });
-      }
-    } catch (e) {}
   }
 }
 
@@ -177,28 +109,13 @@ function setPlaybackState(state) {
 }
 
 // ===========================
-// VISIBILITY CHANGE
+// VISIBILITY CHANGE (MINIMAL)
 // ===========================
-document.addEventListener('visibilitychange', async () => {
-  const isHidden = document.hidden || document.visibilityState === 'hidden';
-  
-  if (isHidden) {
-    if (!audio.paused) {
-      console.log('📱 Backgrounded');
-      
-      if (audioContext && audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
-      
-      setPlaybackState('playing');
-    }
-  } else {
-    if (!audio.paused) {
-      console.log('📱 Foregrounded');
-      
-      if (audioContext && audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && !audio.paused) {
+    console.log('📱 Backgrounded');
+    if (audioContext && audioContext.state === 'suspended') {
+      audioContext.resume();
     }
   }
 });
@@ -237,8 +154,6 @@ function fadeIn() {
   
   let currentStep = 0;
   
-  console.log('🔊 Fade in (20s)');
-  
   fadeInterval = setInterval(() => {
     currentStep++;
     gainNode.gain.value = Math.min(currentStep * gainIncrement, 1.0);
@@ -270,8 +185,6 @@ function fadeOut(callback) {
   
   let currentStep = 0;
   
-  console.log('🔉 Fade out (10s)');
-  
   fadeInterval = setInterval(() => {
     currentStep++;
     gainNode.gain.value = Math.max(startGain - (currentStep * gainDecrement), 0);
@@ -292,11 +205,10 @@ export const player = {
   setPlaylist(songs, index = 0) {
     playlist = songs;
     currentIndex = index;
-    console.log('📝 Playlist:', songs.length);
   },
   
   async playSong(song) {
-    console.log('▶️ Playing:', song.title);
+    console.log('▶️', song.title);
     
     currentSong = song;
     songPlayStartTime = Date.now();
@@ -304,7 +216,6 @@ export const player = {
     hasCountedSong = false;
 
     initAudioContext();
-    await new Promise(resolve => setTimeout(resolve, 50));
 
     audio.crossOrigin = 'anonymous';
     audio.preload = 'auto';
@@ -322,32 +233,19 @@ export const player = {
     updateMediaSession(song);
     showPlayer();
 
-    const playWhenReady = () => {
-      return new Promise((resolve, reject) => {
+    try {
+      audio.load();
+      
+      // Wait for ready
+      await new Promise((resolve, reject) => {
         if (audio.readyState >= 3) {
           resolve();
         } else {
-          const canplayHandler = () => {
-            audio.removeEventListener('canplaythrough', canplayHandler);
-            audio.removeEventListener('error', errorHandler);
-            resolve();
-          };
-          const errorHandler = () => {
-            audio.removeEventListener('canplaythrough', canplayHandler);
-            audio.removeEventListener('error', errorHandler);
-            reject(new Error('Load failed'));
-          };
-          
-          audio.addEventListener('canplaythrough', canplayHandler, { once: true });
-          audio.addEventListener('error', errorHandler, { once: true });
-          setTimeout(() => reject(new Error('Timeout')), 15000);
+          audio.addEventListener('canplaythrough', resolve, { once: true });
+          audio.addEventListener('error', reject, { once: true });
+          setTimeout(() => reject(new Error('Timeout')), 10000);
         }
       });
-    };
-
-    try {
-      audio.load();
-      await playWhenReady();
       
       if (audioContext && audioContext.state === 'suspended') {
         await audioContext.resume();
@@ -355,19 +253,15 @@ export const player = {
       
       await audio.play();
       
-      console.log('✅ Playing');
-      
       playBtn.textContent = 'pause';
       songPlayStartTime = Date.now();
       
       fadeIn();
-      startKeepAlive();
       setPlaybackState('playing');
-      updatePositionState();
       
     } catch (e) {
-      console.error('❌ Play failed:', e);
-      alert('Playback failed. Check connection.');
+      console.error('Play failed:', e);
+      alert('Playback failed');
     }
   }
 };
@@ -378,33 +272,16 @@ export const player = {
 function play() {
   initAudioContext();
   
-  if (audioContext && audioContext.state === 'suspended') {
-    audioContext.resume().then(() => {
-      audio.play().then(() => {
-        playBtn.textContent = 'pause';
-        songPlayStartTime = Date.now();
-        
-        if (audio.currentTime < 5 && gainNode) {
-          fadeIn();
-        }
-        
-        startKeepAlive();
-        setPlaybackState('playing');
-      }).catch(e => console.error('Play failed:', e));
-    });
-  } else {
-    audio.play().then(() => {
-      playBtn.textContent = 'pause';
-      songPlayStartTime = Date.now();
-      
-      if (audio.currentTime < 5 && gainNode) {
-        fadeIn();
-      }
-      
-      startKeepAlive();
-      setPlaybackState('playing');
-    }).catch(e => console.error('Play failed:', e));
-  }
+  audio.play().then(() => {
+    playBtn.textContent = 'pause';
+    songPlayStartTime = Date.now();
+    
+    if (audio.currentTime < 5 && gainNode) {
+      fadeIn();
+    }
+    
+    setPlaybackState('playing');
+  }).catch(e => console.error('Play failed:', e));
 }
 
 function pause() {
@@ -421,7 +298,6 @@ function pause() {
     clearInterval(fadeInterval);
     isFading = false;
   }
-  stopKeepAlive();
   setPlaybackState('paused');
 }
 
@@ -462,15 +338,14 @@ repeatBtn.parentElement.onclick = () => {
 };
 
 // ===========================
-// AUDIO EVENT HANDLERS
+// AUDIO EVENT HANDLERS (MINIMAL)
 // ===========================
 audio.ontimeupdate = () => {
   if (audio.duration && !isNaN(audio.duration)) {
+    // CRITICAL: Only update seek bar, nothing else!
     seekBar.value = (audio.currentTime / audio.duration) * 100;
     
-    // REMOVED: Don't update position state every time, only on seek
-    
-    // Start fade-out 10 seconds before end
+    // Fade out check
     const timeRemaining = audio.duration - audio.currentTime;
     if (timeRemaining <= 10 && timeRemaining > 9.9 && !isFading && gainNode) {
       fadeOut(() => {
@@ -486,6 +361,7 @@ audio.ontimeupdate = () => {
     }
   }
 
+  // Stats check
   if (!hasCountedSong && !audio.paused && songPlayStartTime > 0) {
     const currentSessionTime = (Date.now() - songPlayStartTime) / 1000;
     const totalTime = totalListenedTime + currentSessionTime;
@@ -534,9 +410,7 @@ audio.onpause = () => {
 };
 
 audio.onerror = (e) => {
-  console.error('❌ Audio error:', audio.error);
-  stopKeepAlive();
-  
+  console.error('Audio error:', audio.error);
   setTimeout(() => {
     if (playlist.length > 0) {
       playNextSong();
@@ -544,14 +418,9 @@ audio.onerror = (e) => {
   }, 1000);
 };
 
-audio.onloadedmetadata = () => {
-  updatePositionState();
-};
-
 seekBar.oninput = () => {
   if (audio.duration && !isNaN(audio.duration)) {
     audio.currentTime = (seekBar.value / 100) * audio.duration;
-    updatePositionState(); // Only update on manual seek
   }
 };
 
@@ -655,4 +524,4 @@ onAuthStateChanged(auth, user => {
   };
 });
 
-console.log('🎵 Player loaded - 5-second lag FIXED');
+console.log('🎵 Minimal player - all periodic operations removed');
