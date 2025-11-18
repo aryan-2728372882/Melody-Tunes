@@ -1,4 +1,4 @@
-// scripts/player.js - FINAL ULTRA-CLEAN: NO ALERTS, NO POPUPS, EVER
+// scripts/player.js - FINAL PERFECT VERSION (Old Fade System + New Speed & Stability)
 import { auth, db } from "./firebase-config.js";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
@@ -24,15 +24,61 @@ let playlist = [];
 let currentIndex = 0;
 let keepAliveInterval = null;
 
+// OLD WEBSITE FADE SYSTEM (Copied Exactly — Super Smooth)
+let fadeInDuration = 15000;   // 15 seconds fade-in (your old value)
+let fadeOutDuration = 8000;   // 8 seconds fade-out (your old value)
+let fadeInterval = null;
+let isFading = false;
+let fadeStartTime = 0;
+let fadeStartVolume = 0;
+let fadeTargetVolume = 0;
+
+function startFade(direction) {
+  if (isFading) return;
+  isFading = true;
+  fadeStartTime = Date.now();
+  fadeStartVolume = direction === "in" ? 0 : 100;
+  fadeTargetVolume = direction === "in" ? 100 : 0;
+
+  const duration = direction === "in" ? fadeInDuration : fadeOutDuration;
+
+  clearInterval(fadeInterval);
+  fadeInterval = setInterval(() => {
+    const elapsed = Date.now() - fadeStartTime;
+    const progress = Math.min(elapsed / duration, 1);
+
+    // Smooth ease-in-out curve
+    const eased = progress < 0.5 
+      ? 4 * progress * progress * progress 
+      : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+    const currentVolume = fadeStartVolume + (fadeTargetVolume - fadeStartVolume) * eased;
+    audio.volume = currentVolume / 100;
+
+    if (progress >= 1) {
+      clearInterval(fadeInterval);
+      isFading = false;
+      if (direction === "out" && repeat === 'one') {
+        audio.currentTime = 0;
+        audio.play();
+        playBtn.textContent = 'pause';
+        startFade("in");
+      }
+    }
+  }, 16); // ~60fps
+}
+
+function stopFade() {
+  clearInterval(fadeInterval);
+  isFading = false;
+}
+
+// Rest of the clean, fast, zero-lag system
 let audioContext = null;
 let sourceNode = null;
 let gainNode = null;
 let isInitialized = false;
-let isFading = false;
 
-audio.volume = 1.0;
-
-// =========================== AUDIO CONTEXT ===========================
 function initAudioContext() {
   if (isInitialized) {
     if (audioContext?.state === 'suspended') audioContext.resume();
@@ -57,26 +103,6 @@ function resumeAudioContext() {
   document.addEventListener(evt, resumeAudioContext, { passive: true })
 );
 
-// =========================== SMOOTH FADE ===========================
-function fadeIn(duration = 7000) {
-  if (!gainNode || isFading) return;
-  isFading = true;
-  gainNode.gain.cancelScheduledValues(audioContext.currentTime);
-  gainNode.gain.setValueAtTime(0.001, audioContext.currentTime);
-  gainNode.gain.exponentialRampToValueAtTime(1.0, audioContext.currentTime + duration / 1000);
-  setTimeout(() => isFading = false, duration);
-}
-
-function fadeOut(duration = 3500, callback) {
-  if (!gainNode || isFading) return callback?.();
-  isFading = true;
-  gainNode.gain.cancelScheduledValues(audioContext.currentTime);
-  gainNode.gain.setValueAtTime(gainNode.gain.value, audioContext.currentTime);
-  gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration / 1000);
-  setTimeout(() => { isFading = false; callback?.(); }, duration + 100);
-}
-
-// =========================== KEEP ALIVE ===========================
 function startKeepAlive() {
   if (keepAliveInterval) return;
   keepAliveInterval = setInterval(() => {
@@ -95,7 +121,6 @@ function stopKeepAlive() {
   }
 }
 
-// =========================== MEDIA SESSION ===========================
 if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('play', play);
   navigator.mediaSession.setActionHandler('pause', pause);
@@ -129,13 +154,11 @@ function setPlaybackState(state) {
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
 }
 
-// =========================== UI ===========================
 function showPlayer() {
   playerEl.hidden = false;
   playerEl.classList.add('visible');
 }
 
-// =========================== MAIN PLAYER — 100% SILENT, NO ALERTS ===========================
 export const player = {
   setPlaylist(songs, index = 0) {
     playlist = songs;
@@ -159,31 +182,24 @@ export const player = {
     updateMediaSession(song);
     showPlayer();
 
-    // No waiting, no timeout, no alert — just play silently
     audio.load();
     audio.play().then(() => {
       playBtn.textContent = 'pause';
       setPlaybackState('playing');
       startKeepAlive();
-      fadeIn(7000);
+      startFade("in"); // ← Your old beautiful 15-second fade-in
     }).catch(() => {
-      // Completely silent retry — no alert, no console spam
       setTimeout(() => {
         audio.play().then(() => {
           playBtn.textContent = 'pause';
           startKeepAlive();
-          fadeIn(7000);
-        }).catch(() => {
-          // Still silent — user never sees anything
-          playBtn.textContent = 'pause';
-          startKeepAlive();
+          startFade("in");
         });
-      }, 500);
+      }, 400);
     });
   }
 };
 
-// =========================== PLAY / PAUSE ===========================
 function play() {
   resumeAudioContext();
   audio.play().then(() => {
@@ -191,13 +207,14 @@ function play() {
     songPlayStartTime = Date.now();
     startKeepAlive();
     setPlaybackState('playing');
-    if (audio.currentTime < 5) fadeIn(6000);
+    if (audio.currentTime < 5) startFade("in");
   });
 }
 
 function pause() {
   audio.pause();
   playBtn.textContent = 'play_arrow';
+  stopFade();
   if (songPlayStartTime) {
     totalListenedTime += (Date.now() - songPlayStartTime) / 1000;
     songPlayStartTime = 0;
@@ -215,22 +232,14 @@ repeatBtn.parentElement.onclick = () => {
   repeatBtn.textContent = repeat === 'one' ? 'repeat_one' : 'repeat';
 };
 
-// =========================== AUDIO EVENTS ===========================
 audio.ontimeupdate = () => {
   if (!audio.duration) return;
   seekBar.value = (audio.currentTime / audio.duration) * 100;
   updatePositionState();
 
   const remaining = audio.duration - audio.currentTime;
-  if (remaining <= 12 && remaining > 11 && !isFading) {
-    fadeOut(5000, () => {
-      if (repeat === 'one') {
-        audio.currentTime = 0;
-        audio.play();
-        playBtn.textContent = 'pause';
-        fadeIn(7000);
-      }
-    });
+  if (remaining <= 8 && remaining > 7.5 && !isFading) {
+    startFade("out"); // ← Your old 8-second fade-out before repeat
   }
 
   if (!hasCountedSong && !audio.paused && songPlayStartTime) {
@@ -254,7 +263,7 @@ audio.onended = () => {
     hasCountedSong = false;
     audio.play();
     playBtn.textContent = 'pause';
-    fadeIn(7000);
+    startFade("in");
   } else {
     setTimeout(playNextSong, 400);
   }
@@ -269,7 +278,6 @@ seekBar.oninput = () => {
   }
 };
 
-// =========================== PLAYLIST ===========================
 function playNextSong() {
   if (!playlist.length) return pause();
   currentIndex = (currentIndex + 1) % playlist.length;
@@ -288,7 +296,6 @@ function playPreviousSong() {
   }
 }
 
-// =========================== STATS & AUTH ===========================
 async function updateUserStats(minutes) {
   const user = auth.currentUser;
   if (!user || !currentSong) return;
@@ -308,4 +315,4 @@ onAuthStateChanged(auth, user => {
   profileBtn.onclick = () => location.href = user.email === "prabhakararyan2007@gmail.com" ? "admin-dashboard.html" : "user-dashboard.html";
 });
 
-console.log('MelodyTunes Player — 100% Silent, No Alerts, Perfect Playback');
+console.log('MelodyTunes — Old Fade Feel + New Speed & Perfection');
