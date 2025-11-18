@@ -5,106 +5,43 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "theme_color": "#4a90e2",
-  "background_color": "#ffffff",
+  "background_color": "#000000",
   "categories": ["music", "entertainment"],
   "lang": "en-IN",
   "dir": "ltr",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%234a90e2'/%3E%3Ctext x='50' y='60' font-family='Arial' font-size='50' fill='white' text-anchor='middle'%3EMT%3C/text%3E%3C/svg%3E",
-      "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "assets/logo.png",
-      "sizes": "48x48",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/logo.png",
-      "sizes": "72x72",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/logo.png",
-      "sizes": "96x96",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/logo.png",
-      "sizes": "128x128",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/logo.png",
-      "sizes": "144x144",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/logo.png",
-      "sizes": "152x152",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/logo.png",
+      "src": "/assets/logo.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "assets/logo.png",
-      "sizes": "256x256",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/logo.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/logo.png",
+      "src": "/assets/logo.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
     {
       "name": "Hindi Songs",
       "short_name": "Hindi",
-      "description": "Browse Hindi music",
       "url": "/?genre=hindi",
-      "icons": [
-        {
-          "src": "assets/logo.png",
-          "sizes": "192x192"
-        }
-      ]
+      "icons": [{ "src": "/assets/logo.png", "sizes": "192x192" }]
     },
     {
       "name": "Punjabi Songs",
       "short_name": "Punjabi",
-      "description": "Browse Punjabi music",
       "url": "/?genre=punjabi",
-      "icons": [
-        {
-          "src": "assets/logo.png",
-          "sizes": "192x192"
-        }
-      ]
+      "icons": [{ "src": "/assets/logo.png", "sizes": "192x192" }]
     }
   ],
-  "display_override": ["standalone", "minimal-ui"],
-  "prefer_related_applications": false
+  "prefer_related_applications": false,
+  "edge_side_panel": {
+    "preferred_width": 400
+  }
 }
