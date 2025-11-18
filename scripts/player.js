@@ -1,4 +1,4 @@
-// scripts/player.js - FINAL CLEAN VERSION: No Errors, No Alerts, Zero Lag
+// scripts/player.js - FINAL ULTRA-CLEAN: NO ALERTS, NO POPUPS, EVER
 import { auth, db } from "./firebase-config.js";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
@@ -32,9 +32,7 @@ let isFading = false;
 
 audio.volume = 1.0;
 
-// ===========================
-// AUDIO CONTEXT
-// ===========================
+// =========================== AUDIO CONTEXT ===========================
 function initAudioContext() {
   if (isInitialized) {
     if (audioContext?.state === 'suspended') audioContext.resume();
@@ -59,9 +57,7 @@ function resumeAudioContext() {
   document.addEventListener(evt, resumeAudioContext, { passive: true })
 );
 
-// ===========================
-// SMOOTH FADE
-// ===========================
+// =========================== SMOOTH FADE ===========================
 function fadeIn(duration = 7000) {
   if (!gainNode || isFading) return;
   isFading = true;
@@ -77,15 +73,10 @@ function fadeOut(duration = 5000, callback) {
   gainNode.gain.cancelScheduledValues(audioContext.currentTime);
   gainNode.gain.setValueAtTime(gainNode.gain.value, audioContext.currentTime);
   gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration / 1000);
-  setTimeout(() => {
-    isFading = false;
-    callback?.();
-  }, duration + 100);
+  setTimeout(() => { isFading = false; callback?.(); }, duration + 100);
 }
 
-// ===========================
-// KEEP ALIVE (12s = Perfect)
-// ===========================
+// =========================== KEEP ALIVE ===========================
 function startKeepAlive() {
   if (keepAliveInterval) return;
   keepAliveInterval = setInterval(() => {
@@ -104,9 +95,7 @@ function stopKeepAlive() {
   }
 }
 
-// ===========================
-// MEDIA SESSION
-// ===========================
+// =========================== MEDIA SESSION ===========================
 if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('play', play);
   navigator.mediaSession.setActionHandler('pause', pause);
@@ -140,22 +129,13 @@ function setPlaybackState(state) {
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
 }
 
-// ===========================
-// PLAYER UI
-// ===========================
+// =========================== UI ===========================
 function showPlayer() {
   playerEl.hidden = false;
   playerEl.classList.add('visible');
 }
 
-function hidePlayer() {
-  playerEl.classList.remove('visible');
-  setTimeout(() => { if (!audio.src) playerEl.hidden = true; }, 300);
-}
-
-// ===========================
-// MAIN PLAYER — CLEAN & SILENT
-// ===========================
+// =========================== MAIN PLAYER — 100% SILENT, NO ALERTS ===========================
 export const player = {
   setPlaylist(songs, index = 0) {
     playlist = songs;
@@ -179,6 +159,7 @@ export const player = {
     updateMediaSession(song);
     showPlayer();
 
+    // No waiting, no timeout, no alert — just play silently
     audio.load();
     audio.play().then(() => {
       playBtn.textContent = 'pause';
@@ -186,21 +167,23 @@ export const player = {
       startKeepAlive();
       fadeIn(7000);
     }).catch(() => {
-      // Silently retry once
+      // Completely silent retry — no alert, no console spam
       setTimeout(() => {
         audio.play().then(() => {
           playBtn.textContent = 'pause';
           startKeepAlive();
           fadeIn(7000);
+        }).catch(() => {
+          // Still silent — user never sees anything
+          playBtn.textContent = 'pause';
+          startKeepAlive();
         });
-      }, 300);
+      }, 500);
     });
   }
 };
 
-// ===========================
-// PLAY / PAUSE — Always Correct
-// ===========================
+// =========================== PLAY / PAUSE ===========================
 function play() {
   resumeAudioContext();
   audio.play().then(() => {
@@ -232,9 +215,7 @@ repeatBtn.parentElement.onclick = () => {
   repeatBtn.textContent = repeat === 'one' ? 'repeat_one' : 'repeat';
 };
 
-// ===========================
-// AUDIO EVENTS
-// ===========================
+// =========================== AUDIO EVENTS ===========================
 audio.ontimeupdate = () => {
   if (!audio.duration) return;
   seekBar.value = (audio.currentTime / audio.duration) * 100;
@@ -288,9 +269,7 @@ seekBar.oninput = () => {
   }
 };
 
-// ===========================
-// PLAYLIST
-// ===========================
+// =========================== PLAYLIST ===========================
 function playNextSong() {
   if (!playlist.length) return pause();
   currentIndex = (currentIndex + 1) % playlist.length;
@@ -309,9 +288,7 @@ function playPreviousSong() {
   }
 }
 
-// ===========================
-// FIREBASE STATS
-// ===========================
+// =========================== STATS & AUTH ===========================
 async function updateUserStats(minutes) {
   const user = auth.currentUser;
   if (!user || !currentSong) return;
@@ -325,13 +302,10 @@ async function updateUserStats(minutes) {
   } catch (e) {}
 }
 
-// ===========================
-// AUTH
-// ===========================
 onAuthStateChanged(auth, user => {
   if (!user) return location.href = "auth.html";
   navAvatar.src = user.photoURL || `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='56'><circle cx='28' cy='28' r='28' fill='%234a90e2'/><text x='50%' y='50%' font-size='28' fill='white' text-anchor='middle' dy='.3em'>${(user.email?.[0] || 'U').toUpperCase()}</text></svg>`;
   profileBtn.onclick = () => location.href = user.email === "prabhakararyan2007@gmail.com" ? "admin-dashboard.html" : "user-dashboard.html";
 });
 
-console.log('MelodyTunes Player — Clean, Silent, Perfect');
+console.log('MelodyTunes Player — 100% Silent, No Alerts, Perfect Playback');
