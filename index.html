@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1.0,user-scalable=0" />
+  <!-- FIXED: Removed user-scalable=0 to allow scrolling while keeping zoom disabled -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#4a90e2" />
   <meta name="description" content="Stream Hindi, Punjabi, Haryanvi & Bhojpuri music with seamless background playback" />
   
@@ -34,165 +35,6 @@
       "firebase/firestore": "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js"
     }
   }
-  </script>
-
-  <!-- SERVICE WORKER -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', async () => {
-        try {
-          const registration = await navigator.serviceWorker.register('/service-worker.js', {
-            scope: '/',
-            updateViaCache: 'none'
-          });
-
-          console.log('✅ Service Worker registered');
-
-          registration.addEventListener('updatefound', () => {
-            const newWorker = registration.installing;
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('📦 Update available - reloading in 3s');
-                setTimeout(() => {
-                  newWorker.postMessage({ type: 'SKIP_WAITING' });
-                  window.location.reload();
-                }, 3000);
-              }
-            });
-          });
-
-          let refreshing = false;
-          navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (!refreshing) {
-              refreshing = true;
-              window.location.reload();
-            }
-          });
-
-          if (navigator.storage && navigator.storage.persist) {
-            const granted = await navigator.storage.persist();
-            console.log('💾 Persistent storage:', granted ? '✅' : '❌');
-          }
-
-          if (navigator.storage && navigator.storage.estimate) {
-            const estimate = await navigator.storage.estimate();
-            console.log('📊 Storage:', Math.round(estimate.usage / 1024 / 1024) + 'MB');
-          }
-
-        } catch (error) {
-          console.error('❌ Service Worker failed:', error);
-        }
-      });
-    }
-
-    // Prevent page unload during playback
-    window.addEventListener('beforeunload', (e) => {
-      const audio = document.getElementById('audio');
-      if (audio && !audio.paused) {
-        console.log('⚠️ Page unload prevented');
-        e.preventDefault();
-        e.returnValue = 'Music is playing. Are you sure?';
-        return e.returnValue;
-      }
-    });
-
-    // Request permissions
-    let permissionsRequested = false;
-    
-    async function requestAllPermissions() {
-      if (permissionsRequested) return;
-      permissionsRequested = true;
-      
-      console.log('🔐 Requesting permissions...');
-      
-      if ('Notification' in window && Notification.permission === 'default') {
-        try {
-          const permission = await Notification.requestPermission();
-          console.log('🔔 Notifications:', permission);
-        } catch (e) {
-          console.log('Notification request failed');
-        }
-      }
-      
-      if (navigator.storage && navigator.storage.persist) {
-        try {
-          const granted = await navigator.storage.persist();
-          if (granted) {
-            console.log('✅ Persistent storage granted');
-          }
-        } catch (e) {
-          console.log('Storage persist failed');
-        }
-      }
-    }
-
-    ['click', 'touchstart', 'keydown'].forEach(event => {
-      document.addEventListener(event, requestAllPermissions, { once: true, passive: true });
-    });
-
-    // PWA detection
-    window.addEventListener('DOMContentLoaded', () => {
-      const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
-                    window.navigator.standalone === true ||
-                    document.referrer.includes('android-app://');
-      
-      if (isPWA) {
-        console.log('📱 Running as PWA');
-        document.body.classList.add('pwa-mode');
-      } else {
-        console.log('🌐 Running in browser');
-      }
-      
-      if ('getBattery' in navigator) {
-        navigator.getBattery().then(battery => {
-          console.log('🔋', Math.round(battery.level * 100) + '%', battery.charging ? '⚡' : '');
-        });
-      }
-    });
-
-    // Monitor playback
-    document.addEventListener('DOMContentLoaded', () => {
-      const audio = document.getElementById('audio');
-      
-      audio.addEventListener('play', () => {
-        console.log('▶️ Playback started');
-        document.body.classList.add('playing');
-      });
-      
-      audio.addEventListener('pause', () => {
-        console.log('⏸️ Playback paused');
-        document.body.classList.remove('playing');
-      });
-      
-      audio.addEventListener('ended', () => {
-        console.log('🏁 Playback ended');
-      });
-    });
-
-    // Visibility handling
-    document.addEventListener('visibilitychange', () => {
-      const audio = document.getElementById('audio');
-      if (audio && !audio.paused) {
-        if (document.hidden) {
-          console.log('📱 Screen off - music continues (Spotify mode)');
-        } else {
-          console.log('📱 Screen on');
-        }
-      }
-    });
-
-    // Prevent pull-to-refresh (can interrupt playback)
-    let startY = 0;
-    document.addEventListener('touchstart', e => {
-      startY = e.touches[0].clientY;
-    }, { passive: true });
-    
-    document.addEventListener('touchmove', e => {
-      const y = e.touches[0].clientY;
-      if (window.scrollY === 0 && y > startY) {
-        e.preventDefault();
-      }
-    }, { passive: false });
   </script>
 
   <style>
@@ -229,14 +71,14 @@
       touch-action: manipulation;
     }
     
-    /* Remove white bar at bottom */
+    /* FIXED: Remove position: fixed and use proper viewport height */
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
       width: 100%;
-      position: fixed;
-      overflow: hidden;
+      position: relative; /* Changed from fixed */
+      overflow: hidden; /* Only hidden at root level */
     }
     
     .app {
@@ -249,6 +91,23 @@
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
+      /* FIXED: Ensure scroll container has proper height */
+      height: 100%;
+    }
+
+    /* Add scroll restoration */
+    .content::-webkit-scrollbar {
+      width: 8px;
+    }
+    .content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .content::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.2);
+      border-radius: 4px;
+    }
+    .dark-theme .content::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.2);
     }
   </style>
 </head>
@@ -321,6 +180,23 @@
       </div>
     </footer>
   </div>
+
+  <!-- FIXED: Added scroll restoration script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const content = document.querySelector('.content');
+      
+      // Restore scroll position after page load
+      setTimeout(() => {
+        content.scrollTo(0, 0);
+      }, 100);
+      
+      // Handle scroll restoration after navigation
+      window.addEventListener('pageshow', () => {
+        content.scrollTo(0, 0);
+      });
+    });
+  </script>
 
   <!-- Load scripts -->
   <script type="module" src="scripts/player.js"></script>

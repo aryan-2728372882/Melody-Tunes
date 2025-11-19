@@ -24,11 +24,17 @@ let playlist = [];
 let currentIndex = 0;
 let keepAliveInterval = null;
 
-// YOUR OLD SMOOTH FADE (15s in, 8s out)
+// SMOOTH FADE CONFIGURATION
 let fadeInDuration = 15000;
 let fadeOutDuration = 8000;
 let fadeInterval = null;
 let isFading = false;
+
+// RESET FADE STATE ON SONG CHANGE
+function resetFadeState() {
+  stopFade();
+  audio.volume = 0;
+}
 
 function startFade(direction) {
   if (isFading) return;
@@ -58,7 +64,10 @@ function startFade(direction) {
   }, 16);
 }
 
-function stopFade() { clearInterval(fadeInterval); isFading = false; }
+function stopFade() { 
+  clearInterval(fadeInterval); 
+  isFading = false; 
+}
 
 // 2025 DROPBOX FIX – KEEPS rlkey + ADDS raw=1 (NO MORE 403!)
 function fixDropboxUrl(url) {
@@ -67,7 +76,7 @@ function fixDropboxUrl(url) {
     const u = new URL(url);
     if (u.hostname === 'www.dropbox.com') {
       u.hostname = 'dl.dropboxusercontent.com';
-      u.searchParams.set('raw', '1'); // Force raw=1
+      u.searchParams.set('raw', '1');
       return u.toString();
     }
   } catch (e) {}
@@ -85,7 +94,9 @@ function initAudioContext() {
   }
   if (audioContext.state === 'suspended') audioContext.resume();
 }
-['click', 'touchstart', 'keydown'].forEach(evt => document.addEventListener(evt, () => initAudioContext(), { passive: true, once: true }));
+['click', 'touchstart', 'keydown'].forEach(evt => 
+  document.addEventListener(evt, () => initAudioContext(), { passive: true, once: true })
+);
 
 function startKeepAlive() {
   if (keepAliveInterval) return;
@@ -95,7 +106,10 @@ function startKeepAlive() {
     }
   }, 12000);
 }
-function stopKeepAlive() { clearInterval(keepAliveInterval); keepAliveInterval = null; }
+function stopKeepAlive() { 
+  clearInterval(keepAliveInterval); 
+  keepAliveInterval = null; 
+}
 
 // Media Session
 if ('mediaSession' in navigator) {
@@ -119,15 +133,24 @@ function updateMediaSession(song) {
   });
 }
 
-function showPlayer() { playerEl.hidden = false; playerEl.classList.add('visible'); }
+function showPlayer() { 
+  playerEl.hidden = false; 
+  playerEl.classList.add('visible'); 
+}
 
 // MAIN PLAYER – FINAL FIXED
 export const player = {
-  setPlaylist(songs, index = 0) { playlist = songs; currentIndex = index; },
+  setPlaylist(songs, index = 0) { 
+    playlist = songs; 
+    currentIndex = index; 
+  },
 
   async playSong(song) {
     if (!song?.link) return;
 
+    // Reset fade state before new song
+    resetFadeState();
+    
     currentSong = song;
     songPlayStartTime = Date.now();
     totalListenedTime = 0;
@@ -153,13 +176,31 @@ export const player = {
 };
 
 // Controls
-function play() { initAudioContext(); audio.play().then(() => { playBtn.textContent = 'pause'; songPlayStartTime = Date.now(); startKeepAlive(); if (audio.currentTime < 5) startFade("in"); }); }
-function pause() { audio.pause(); playBtn.textContent = 'play_arrow'; stopFade(); if (songPlayStartTime) totalListenedTime += (Date.now() - songPlayStartTime) / 1000; songPlayStartTime = 0; stopKeepAlive(); }
+function play() { 
+  initAudioContext(); 
+  audio.play().then(() => { 
+    playBtn.textContent = 'pause'; 
+    songPlayStartTime = Date.now(); 
+    startKeepAlive(); 
+    if (audio.currentTime < 5) startFade("in"); 
+  }); 
+}
+function pause() { 
+  audio.pause(); 
+  playBtn.textContent = 'play_arrow'; 
+  stopFade(); 
+  if (songPlayStartTime) totalListenedTime += (Date.now() - songPlayStartTime) / 1000; 
+  songPlayStartTime = 0; 
+  stopKeepAlive(); 
+}
 
 playBtn.parentElement.onclick = () => audio.paused ? play() : pause();
 prevBtn.onclick = () => playlist.length && playPreviousSong();
 nextBtn.onclick = () => playlist.length && playNextSong();
-repeatBtn.parentElement.onclick = () => { repeat = repeat === 'off' ? 'one' : 'off'; repeatBtn.textContent = repeat === 'one' ? 'repeat_one' : 'repeat'; };
+repeatBtn.parentElement.onclick = () => { 
+  repeat = repeat === 'off' ? 'one' : 'off'; 
+  repeatBtn.textContent = repeat === 'one' ? 'repeat_one' : 'repeat'; 
+};
 
 audio.ontimeupdate = () => {
   if (!audio.duration) return;
@@ -180,18 +221,35 @@ audio.onended = () => {
     updateUserStats(minutes);
   }
   if (repeat === 'one') {
-    audio.currentTime = 0; songPlayStartTime = Date.now(); totalListenedTime = 0; hasCountedSong = false;
-    audio.play(); playBtn.textContent = 'pause'; startFade("in");
+    audio.currentTime = 0; 
+    songPlayStartTime = Date.now(); 
+    totalListenedTime = 0; 
+    hasCountedSong = false;
+    audio.play(); 
+    playBtn.textContent = 'pause'; 
+    startFade("in");
   } else setTimeout(playNextSong, 400);
 };
 
 audio.onerror = () => setTimeout(playNextSong, 2000);
 seekBar.oninput = () => audio.duration && (audio.currentTime = (seekBar.value / 100) * audio.duration);
 
-function playNextSong() { if (!playlist.length) return pause(); currentIndex = (currentIndex + 1) % playlist.length; player.playSong(playlist[currentIndex]); }
+function playNextSong() { 
+  if (!playlist.length) return pause(); 
+  currentIndex = (currentIndex + 1) % playlist.length; 
+  player.playSong(playlist[currentIndex]); 
+}
 function playPreviousSong() {
-  if (audio.currentTime > 3) { audio.currentTime = 0; totalListenedTime = 0; hasCountedSong = false; songPlayStartTime = Date.now(); }
-  else if (playlist.length) { currentIndex = (currentIndex - 1 + playlist.length) % playlist.length; player.playSong(playlist[currentIndex]); }
+  if (audio.currentTime > 3) { 
+    audio.currentTime = 0; 
+    totalListenedTime = 0; 
+    hasCountedSong = false; 
+    songPlayStartTime = Date.now(); 
+  }
+  else if (playlist.length) { 
+    currentIndex = (currentIndex - 1 + playlist.length) % playlist.length; 
+    player.playSong(playlist[currentIndex]); 
+  }
 }
 
 async function updateUserStats(minutes) {
