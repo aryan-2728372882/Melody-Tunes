@@ -283,13 +283,8 @@ export const player = {
       return;
     }
     
-    // FIX: Properly pause and clear before setting new source
+    // FIX: Properly pause before changing source
     audio.pause();
-    audio.src = ''; // Clear source first
-    audio.load(); // Force cleanup
-    
-    // FIX: Wait for cleanup
-    await new Promise(resolve => setTimeout(resolve, 150));
     
     // CRITICAL: Set these BEFORE src
     audio.crossOrigin = "anonymous";
@@ -297,7 +292,7 @@ export const player = {
     audio.autoplay = false;
     audio.volume = 0; // Start from 0 for fade in
     
-    // Set new source
+    // FIX: Set new source directly without clearing
     audio.src = fixedUrl;
     console.log('Loading:', fixedUrl);
 
@@ -328,7 +323,7 @@ export const player = {
           // FIX: Check if audio is ready
           if (audio.readyState < 2) {
             console.log('Audio not ready, waiting...');
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 300));
           }
           
           await audio.play();
@@ -349,7 +344,7 @@ export const player = {
           
           if (playAttempts < maxAttempts) {
             // Retry after delay
-            setTimeout(() => attemptPlay(), 1000);
+            setTimeout(() => attemptPlay(), 800);
           } else {
             console.error('All play attempts failed');
             playBtn.textContent = 'play_arrow';
@@ -375,6 +370,13 @@ export const player = {
       
       const errorHandler = (e) => {
         if (hasResolved) return;
+        
+        // FIX: Ignore empty src errors during transition
+        if (audio.error?.code === 4) {
+          console.log('Ignoring empty src error during load');
+          return;
+        }
+        
         hasResolved = true;
         
         audio.removeEventListener('canplay', canPlayHandler);
@@ -387,14 +389,15 @@ export const player = {
       
       audio.addEventListener('canplay', canPlayHandler, { once: true });
       audio.addEventListener('loadeddata', loadedDataHandler, { once: true });
-      audio.addEventListener('error', errorHandler, { once: true });
+      audio.addEventListener('error', errorHandler);
       
-      // FIX: Extended timeout for slow networks
+      // FIX: Timeout for slow networks
       setTimeout(() => {
         if (hasResolved) return;
         console.log('Timeout reached, forcing play attempt');
+        audio.removeEventListener('error', errorHandler);
         attemptPlay();
-      }, 6000);
+      }, 5000);
     });
   }
 };
@@ -518,6 +521,12 @@ audio.onended = () => {
 audio.onerror = (e) => {
   console.error('Audio error:', e, audio.error);
   
+  // FIX: Ignore empty src errors (code 4) - they happen during transitions
+  if (audio.error?.code === 4) {
+    console.log('Ignoring empty src error');
+    return;
+  }
+  
   // FIX: Update button state on error
   playBtn.textContent = 'play_arrow';
   
@@ -539,8 +548,8 @@ audio.onerror = (e) => {
         });
       }
     }, 1000);
-  } else {
-    // Other errors - skip to next
+  } else if (audio.error?.code !== 4) {
+    // Other errors (except empty src) - skip to next
     setTimeout(() => playNextSong(), 2000);
   }
 };
