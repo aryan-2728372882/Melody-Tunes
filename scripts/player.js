@@ -92,30 +92,39 @@ let gainNode = null;
 let hasConnectedSource = false; // FIX: Track if source is already connected
 
 function initAudioContext() {
-  if (!audioContext || audioContext.state === 'closed') {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    audioContext = new AC({ latencyHint: 'playback' });
-    
-    // FIX: Only create source node once
-    if (!hasConnectedSource) {
-      sourceNode = audioContext.createMediaElementSource(audio);
-      gainNode = audioContext.createGain();
+  try {
+    if (!audioContext || audioContext.state === 'closed') {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioContext = new AC({ latencyHint: 'playback' });
       
-      // Connect: source -> gain -> destination
-      sourceNode.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      hasConnectedSource = true;
-      
-      // Keep global references
-      window.audioContext = audioContext;
-      window.sourceNode = sourceNode;
-      window.gainNode = gainNode;
+      // FIX: Only create source node once
+      if (!hasConnectedSource) {
+        sourceNode = audioContext.createMediaElementSource(audio);
+        gainNode = audioContext.createGain();
+        gainNode.gain.value = 1; // Ensure gain is at 1
+        
+        // Connect: source -> gain -> destination
+        sourceNode.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        hasConnectedSource = true;
+        
+        // Keep global references
+        window.audioContext = audioContext;
+        window.sourceNode = sourceNode;
+        window.gainNode = gainNode;
+        
+        console.log('AudioContext initialized');
+      }
     }
-  }
-  
-  if (audioContext.state === 'suspended') {
-    audioContext.resume();
+    
+    if (audioContext.state === 'suspended') {
+      audioContext.resume().then(() => {
+        console.log('AudioContext resumed');
+      });
+    }
+  } catch (e) {
+    console.error('AudioContext init error:', e);
   }
 }
 
@@ -141,9 +150,19 @@ function startServiceWorkerKeepAlive() {
       });
     }
     
-    // Also ping audioContext
-    if (audioContext?.state === 'suspended') {
-      audioContext.resume();
+    // FIX: Also ping audioContext AND check gain
+    if (audioContext) {
+      if (audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+          console.log('AudioContext auto-resumed in keepalive');
+        });
+      }
+      
+      // FIX: Ensure gain is always at 1
+      if (gainNode && gainNode.gain.value !== 1) {
+        gainNode.gain.value = 1;
+        console.log('Gain reset to 1');
+      }
     }
   }, 3000); // Every 3 seconds
 }
@@ -242,14 +261,20 @@ export const player = {
     
     // FIX: Stop any ongoing fade and reset volume properly
     stopFade();
-    audio.volume = 0; // Start from 0 for fade in
     
     currentSong = song;
     songPlayStartTime = Date.now();
     totalListenedTime = 0;
     hasCountedSong = false;
 
+    // FIX: Initialize AudioContext BEFORE any audio operations
     initAudioContext();
+    
+    // FIX: Force resume AudioContext
+    if (audioContext?.state === 'suspended') {
+      await audioContext.resume();
+      console.log('AudioContext resumed before song load');
+    }
     
     const fixedUrl = fixDropboxUrl(song.link);
     
@@ -261,17 +286,20 @@ export const player = {
     // FIX: Properly pause and clear before setting new source
     audio.pause();
     audio.src = ''; // Clear source first
+    audio.load(); // Force cleanup
     
-    // FIX: Wait a bit for cleanup
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // FIX: Wait for cleanup
+    await new Promise(resolve => setTimeout(resolve, 150));
     
     // CRITICAL: Set these BEFORE src
     audio.crossOrigin = "anonymous";
     audio.preload = "auto";
     audio.autoplay = false;
+    audio.volume = 0; // Start from 0 for fade in
     
     // Set new source
     audio.src = fixedUrl;
+    console.log('Loading:', fixedUrl);
 
     titleEl.textContent = song.title;
     thumbEl.style.backgroundImage = song.thumbnail ? `url(${song.thumbnail})` : '';
@@ -283,54 +311,66 @@ export const player = {
     // FIX: Better loading and playing logic
     return new Promise((resolve) => {
       let hasResolved = false;
+      let playAttempts = 0;
+      const maxAttempts = 3;
       
-      const canPlayHandler = async () => {
-        if (hasResolved) return;
-        hasResolved = true;
-        
-        audio.removeEventListener('canplay', canPlayHandler);
-        audio.removeEventListener('loadeddata', loadedDataHandler);
-        audio.removeEventListener('error', errorHandler);
+      const attemptPlay = async () => {
+        playAttempts++;
+        console.log(`Play attempt ${playAttempts}/${maxAttempts}`);
         
         try {
-          // FIX: Ensure AudioContext is ready
+          // FIX: Ensure AudioContext is ready EVERY time
           if (audioContext?.state === 'suspended') {
             await audioContext.resume();
+            console.log('AudioContext resumed in attemptPlay');
+          }
+          
+          // FIX: Check if audio is ready
+          if (audio.readyState < 2) {
+            console.log('Audio not ready, waiting...');
+            await new Promise(r => setTimeout(r, 500));
           }
           
           await audio.play();
-          playBtn.textContent = 'pause'; // FIX: Update button immediately
+          playBtn.textContent = 'pause';
+          console.log('Playback started successfully');
           startServiceWorkerKeepAlive();
           startFade("in");
           
           // Preload next song after current starts
           setTimeout(() => preloadNextSong(), 5000);
           
-          resolve();
+          if (!hasResolved) {
+            hasResolved = true;
+            resolve();
+          }
         } catch (err) {
-          console.error('Play failed:', err);
-          // FIX: Retry with user interaction
-          setTimeout(async () => {
-            try {
-              if (audioContext?.state === 'suspended') {
-                await audioContext.resume();
-              }
-              await audio.play();
-              playBtn.textContent = 'pause';
-              startServiceWorkerKeepAlive();
-              startFade("in");
-              resolve();
-            } catch (e) {
-              console.error('Retry failed:', e);
-              playBtn.textContent = 'play_arrow'; // FIX: Reset button on failure
+          console.error(`Play attempt ${playAttempts} failed:`, err);
+          
+          if (playAttempts < maxAttempts) {
+            // Retry after delay
+            setTimeout(() => attemptPlay(), 1000);
+          } else {
+            console.error('All play attempts failed');
+            playBtn.textContent = 'play_arrow';
+            if (!hasResolved) {
+              hasResolved = true;
               resolve();
             }
-          }, 500);
+          }
         }
       };
       
+      const canPlayHandler = () => {
+        if (hasResolved) return;
+        console.log('Can play event fired');
+        attemptPlay();
+      };
+      
       const loadedDataHandler = () => {
-        canPlayHandler();
+        if (hasResolved) return;
+        console.log('Loaded data event fired');
+        attemptPlay();
       };
       
       const errorHandler = (e) => {
@@ -341,7 +381,7 @@ export const player = {
         audio.removeEventListener('loadeddata', loadedDataHandler);
         audio.removeEventListener('error', errorHandler);
         console.error('Load error:', e);
-        playBtn.textContent = 'play_arrow'; // FIX: Reset button on error
+        playBtn.textContent = 'play_arrow';
         resolve();
       };
       
@@ -352,21 +392,9 @@ export const player = {
       // FIX: Extended timeout for slow networks
       setTimeout(() => {
         if (hasResolved) return;
-        hasResolved = true;
-        
-        audio.removeEventListener('canplay', canPlayHandler);
-        audio.removeEventListener('loadeddata', loadedDataHandler);
-        audio.removeEventListener('error', errorHandler);
-        
-        audio.play().then(() => {
-          playBtn.textContent = 'pause';
-          startServiceWorkerKeepAlive();
-          startFade("in");
-        }).catch(() => {
-          playBtn.textContent = 'play_arrow';
-        });
-        resolve();
-      }, 5000); // Increased timeout
+        console.log('Timeout reached, forcing play attempt');
+        attemptPlay();
+      }, 6000);
     });
   }
 };
@@ -448,7 +476,6 @@ audio.onended = () => {
   
   // FIX: Stop fade and reset volume
   stopFade();
-  audio.volume = 1; // Reset to full volume
   
   if (songPlayStartTime) totalListenedTime += (Date.now() - songPlayStartTime) / 1000;
   
@@ -463,12 +490,27 @@ audio.onended = () => {
     totalListenedTime = 0; 
     hasCountedSong = false;
     audio.volume = 0; // Start fade
-    audio.play(); 
-    playBtn.textContent = 'pause'; 
-    startFade("in");
+    
+    // FIX: Ensure AudioContext is active before replay
+    if (audioContext?.state === 'suspended') {
+      audioContext.resume().then(() => {
+        audio.play(); 
+        playBtn.textContent = 'pause'; 
+        startFade("in");
+      });
+    } else {
+      audio.play(); 
+      playBtn.textContent = 'pause'; 
+      startFade("in");
+    }
   } else {
-    // FIX: Ensure next song plays with clean state
-    playNextSong();
+    // FIX: Reset volume before next song
+    audio.volume = 1;
+    
+    // FIX: Small delay before next song to ensure cleanup
+    setTimeout(() => {
+      playNextSong();
+    }, 200);
   }
 };
 
