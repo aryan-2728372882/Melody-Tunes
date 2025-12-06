@@ -1,8 +1,8 @@
-// service-worker.js — MusicsAura 2025 - SCREEN OFF PLAYBACK FIX (OPTIMIZED)
+// service-worker.js — MusicsAura 2025 - SCREEN OFF PLAYBACK FIX (CLEAN)
 const CACHE_NAME = 'MusicsAuras-v14';
 const CORE_ASSETS = ['/', '/index.html', '/auth.html', '/manifest.json', '/styles/styles.css', '/scripts/player.js', '/scripts/app.js', '/scripts/firebase-config.js', '/assets/logo.png'];
 
-// FAST Dropbox URL fix - only modify if needed
+// FAST Dropbox URL fix
 function fixDropboxUrl(url) {
   if (!url.includes('dropbox.com')) return url;
   
@@ -13,7 +13,6 @@ function fixDropboxUrl(url) {
   
   try {
     const u = new URL(url);
-    // Only modify if it's a www.dropbox.com link
     if (u.hostname === 'www.dropbox.com') {
       u.hostname = 'dl.dropboxusercontent.com';
       if (!u.searchParams.has('raw')) {
@@ -22,7 +21,6 @@ function fixDropboxUrl(url) {
       return u.toString();
     }
   } catch (e) {
-    // If URL parsing fails, try simple fix
     return url.replace('www.dropbox.com', 'dl.dropboxusercontent.com') + 
            (url.includes('?') ? '&raw=1' : '?raw=1');
   }
@@ -32,7 +30,7 @@ function fixDropboxUrl(url) {
 
 // Install
 self.addEventListener('install', e => {
-  console.log('SW installing...');
+  console.log('[SW] Installing...');
   e.waitUntil(
     caches.open(CACHE_NAME)
       .then(c => c.addAll(CORE_ASSETS))
@@ -42,7 +40,7 @@ self.addEventListener('install', e => {
 
 // Activate
 self.addEventListener('activate', e => {
-  console.log('SW activating...');
+  console.log('[SW] Activated');
   e.waitUntil(
     caches.keys()
       .then(names => Promise.all(
@@ -52,41 +50,27 @@ self.addEventListener('activate', e => {
   );
 });
 
-// ULTRA-FAST fetch handler for audio - minimal processing
+// Fast fetch handler for audio
 self.addEventListener('fetch', event => {
   const url = event.request.url;
 
-  // AUDIO FILES: Direct fetch with minimal processing
+  // AUDIO FILES: Priority handling
   if (/\.(mp3|m4a|aac|wav|ogg|flac)($|\?)/i.test(url)) {
-    // FAST PATH: Use the original request if possible
     event.respondWith(
       (async () => {
         try {
-          // Try original request first (fastest)
-          const directFetch = fetch(event.request, {
+          // Try direct fetch first
+          const response = await fetch(event.request, {
             credentials: 'omit',
             mode: 'cors',
-            cache: 'no-cache',  // Changed from 'default' for freshness
+            cache: 'no-cache',
             keepalive: true,
-            priority: 'high'    // Audio is high priority
+            priority: 'high'
           });
           
-          // Set a timeout for faster fallback
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout')), 5000)
-          );
-          
-          const response = await Promise.race([directFetch, timeoutPromise]);
-          
-          // If successful, return it
-          if (response.ok) {
-            return response;
-          }
-          
-          // If not successful, try Dropbox fix
+          if (response.ok) return response;
           throw new Error('Direct fetch failed');
         } catch (directError) {
-          console.log('Trying Dropbox fix for:', url);
           // Fallback to Dropbox fix
           const fixedUrl = fixDropboxUrl(url);
           
@@ -100,15 +84,13 @@ self.addEventListener('fetch', event => {
                 priority: 'high'
               });
               
-              if (fixedResponse.ok) {
-                return fixedResponse;
-              }
+              if (fixedResponse.ok) return fixedResponse;
             } catch (fixedError) {
-              console.warn('Fixed URL also failed:', fixedError);
+              // Continue to fallback
             }
           }
           
-          // Last resort: original request without optimizations
+          // Last resort
           return fetch(event.request);
         }
       })()
@@ -116,26 +98,23 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // APIs & Firebase → network only (no caching)
+  // APIs & Firebase → network only
   if (url.includes('firebase') || url.includes('googleapis') || url.includes('gstatic') || url.includes('/jsons/')) {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // App shell → cache-first (optimized)
+  // App shell → cache-first
   event.respondWith(
     (async () => {
       const cached = await caches.match(event.request);
       if (cached) {
-        // Update cache in background for next time
-        fetchAndCache(event.request);
+        fetchAndCache(event.request); // Background update
         return cached;
       }
       
-      // Not in cache, fetch fresh
       const response = await fetch(event.request);
       
-      // Only cache successful, same-origin responses
       if (response.status === 200 && response.type === 'basic') {
         const cache = await caches.open(CACHE_NAME);
         await cache.put(event.request, response.clone());
@@ -146,7 +125,7 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// Background cache update (non-blocking)
+// Background cache update
 async function fetchAndCache(request) {
   try {
     const response = await fetch(request);
@@ -155,11 +134,11 @@ async function fetchAndCache(request) {
       await cache.put(request, response);
     }
   } catch (err) {
-    // Silent fail - background update only
+    // Silent fail
   }
 }
 
-// ENHANCED: Message handling — ONLY ONE LOG PER SONG
+// Message handling
 let keepAliveTimer = null;
 let lastKeepAlive = Date.now();
 let currentSong = null;
@@ -170,10 +149,10 @@ self.addEventListener('message', event => {
   if (data?.type === 'KEEP_ALIVE') {
     lastKeepAlive = Date.now();
     
-    // ← ONLY LOG WHEN SONG CHANGES → exactly 1 line per song
+    // Only log song changes
     if (data.playing && data.song && currentSong !== data.song) {
       currentSong = data.song;
-      console.log(`%cSW: Playing - ${data.song}`, 'color: #4CAF50; font-weight: bold;');
+      console.log(`[SW] Playing: ${data.song}`);
     }
     
     clearTimeout(keepAliveTimer);
@@ -182,18 +161,12 @@ self.addEventListener('message', event => {
     if (event.ports && event.ports[0]) {
       event.ports[0].postMessage({ 
         alive: true, 
-        timestamp: Date.now(),
-        currentSong: currentSong
+        timestamp: Date.now()
       });
     }
   }
   
-  // HEARTBEAT - silent
-  if (data?.type === 'HEARTBEAT') {
-    lastKeepAlive = Date.now();
-  }
-  
-  if (data?.type === 'BACKGROUND_PING') {
+  if (data?.type === 'HEARTBEAT' || data?.type === 'BACKGROUND_PING') {
     lastKeepAlive = Date.now();
   }
   
@@ -201,24 +174,19 @@ self.addEventListener('message', event => {
     self.skipWaiting();
   }
   
-  // NEW: Audio preload hint
-  if (data?.type === 'PRELOAD_AUDIO') {
-    if (data.url) {
-      // Pre-fetch in background
-      fetch(data.url, { 
-        mode: 'cors',
-        priority: 'low',
-        credentials: 'omit'
-      }).catch(() => {}); // Silent fail
-    }
+  if (data?.type === 'PRELOAD_AUDIO' && data.url) {
+    fetch(data.url, { 
+      mode: 'cors',
+      priority: 'low',
+      credentials: 'omit'
+    }).catch(() => {});
   }
 });
 
-// Optimized heartbeat - less aggressive but still effective
+// Heartbeat to keep SW alive
 setInterval(() => {
   const now = Date.now();
-  // Only send heartbeat if we've received a message recently
-  if (now - lastKeepAlive < 30000) { // 30 seconds
+  if (now - lastKeepAlive < 30000) {
     self.clients.matchAll({ includeUncontrolled: true, type: 'window' })
       .then(clients => {
         if (clients.length > 0) {
@@ -229,21 +197,21 @@ setInterval(() => {
         }
       });
   }
-}, 15000); // Every 15 seconds (reduced from 20)
+}, 15000);
 
-// Keep service worker alive during playback
+// Keep service worker alive
 function keepAlive() {
   setTimeout(keepAlive, 10000);
 }
 keepAlive();
 
-// Handle errors
+// Error handling
 self.addEventListener('error', event => {
-  console.error('SW Error:', event.error);
+  console.error('[SW] Error:', event.error);
 });
 
 self.addEventListener('unhandledrejection', event => {
-  console.error('SW Unhandled Rejection:', event.reason);
+  console.error('[SW] Unhandled Rejection:', event.reason);
 });
 
-console.log('MusicsAura SW v14 — ULTRA-FAST AUDIO LOADING');
+console.log('[SW] MusicsAura v14 Ready');
