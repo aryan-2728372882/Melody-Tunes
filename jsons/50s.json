@@ -8,6 +8,22 @@
     "genre": "50s"
   },
   {
+    "title": "Tu Shayar Hain Main Teri Shayari",
+    "artist": "Alka Yagnik",
+    "link": "https://www.dropbox.com/scl/fi/jbdyh3v0nw0adulum3k62/Tu-Shayar-Hai-Main-Teri-Shayari.mp3?rlkey=9odq72ufm03oapvys9vfezlxf&st=ism70p31&raw=1",
+    "thumbnail": "https://i.ytimg.com/vi/GTAj9ug-Nt8/sddefault.jpg",
+    "keywords": ["Tu", "Shayar", "Hai", "Main", "Teri", "Shayari", "Alka Yagnik"],
+    "genre": "50s"
+  },
+  {
+    "title": "Hum Tumko Nigahon Mein",
+    "artist": "Udit Narayan, Shreya Ghoshal, Shabbir Ahmed, Sajid Wajid",
+    "link": "https://www.dropbox.com/scl/fi/u09431dpur3zpg0eyaoea/Hum-Tumko-Nigahon-Mein.mp3?rlkey=osawl1qzkz8ychgg9svxsh47c&st=mcsazpzx&raw=1",
+    "thumbnail": "https://i.ytimg.com/vi/MbIRbYjLdqM/maxresdefault.jpg",
+    "keywords": ["Hum", "Tumko", "Nigahon", "Mein", "Udit Narayan", "Shreya Ghoshal",""],
+    "genre": "50s"
+  },
+  {
     "title": "Abhi Toh Mohabbat Ka Aghaz Hai",
     "artist": "Alka Yagnik, Udit Narayan",
     "link": "https://www.dropbox.com/scl/fi/tznem3rbs43hslh20amuh/Abhi-To-Mohabbat-Ka-Aghaz-Hai.mp3?rlkey=nvfvfg4kovugv68y3hwmyfjve&st=hoo7jnv4&raw=1",
@@ -304,14 +320,21 @@
     "genre": "50s"
   },
   {
-    "title": "Allah Kare Dil Na Lage Kissise",
-    "artist": "Alka Yagnik",
-    "link": "https://www.dropbox.com/scl/fi/q5dvmqim18xmrmy1eesmc/Allah-Kare-Dil-Na-Lage-Kisise.mp3?rlkey=cq6alamrhpupg3anoi0r5x8jx&st=odrlmi2c&raw=1",
-    "thumbnail": "https://i.scdn.co/image/ab67616d00001e020789af3ce832a896fe568949",
-    "keywords": ["Allah", "Kare", "Dil", "Na", "Lage", "Kisise", "Alka Yagnik"],
+    "title": "",
+    "artist": "",
+    "link": "",
+    "thumbnail": "",
+    "keywords": [],
     "genre": "50s"
   },
   {
+    "title": "",
+    "artist": "",
+    "link": "",
+    "thumbnail": "",
+    "keywords": [],
+    "genre": "50s"
+  },{
     "title": "",
     "artist": "",
     "link": "",
