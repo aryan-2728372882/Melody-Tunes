@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "service-worker.js",
   "scripts": {
-    "start": "live-server "
+    "start": "live-server",
+    "build": "echo 'MusicsAura PWA is ready for deployment'",
+    "deploy": "git add . && git commit -m 'Deploy to Vercel' && git push origin main"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",

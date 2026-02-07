@@ -1,14 +1,19 @@
-// service-worker.js — MusicsAura 2025 - OPTIMIZED
-const CACHE_NAME = 'MusicsAura-v15';
+// service-worker.js — MusicsAura 2025 - OPTIMIZED with Cache Busting
+// Version with automatic cache invalidation on deployment
+const CACHE_VERSION = '2025-02-07-v1'; // Update this on each deployment
+const CACHE_NAME = 'MusicsAura-' + CACHE_VERSION;
 const CORE_ASSETS = [
   '/',
   '/index.html',
   '/auth.html',
+  '/user-dashboard.html',
+  '/admin-dashboard.html',
   '/manifest.json',
   '/styles/styles.css',
   '/scripts/player.js',
   '/scripts/app.js',
   '/scripts/firebase-config.js',
+  '/scripts/play-state-manager.js',
   '/assets/logo.png'
 ];
 
@@ -115,6 +120,32 @@ self.addEventListener('fetch', event => {
       url.includes('/jsons/') ||
       url.includes('firestore')) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // HTML pages - Network First (always get latest updates)
+  if (/\.(html)($|\?)/i.test(url) || url.endsWith('/')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          // Cache successful responses
+          if (response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then(cache => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(() => {
+          // Fall back to cache if offline
+          return caches.match(event.request)
+            .then(cached => cached || new Response('Offline - cached version not available', { 
+              status: 503, 
+              statusText: 'Service Unavailable' 
+            }));
+        })
+    );
     return;
   }
 
