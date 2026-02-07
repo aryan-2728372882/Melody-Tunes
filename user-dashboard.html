@@ -194,11 +194,9 @@
         }
       };
 
-      // Save state before leaving and sync Firebase stats
+      // Save state before leaving
       document.querySelector('.back-btn').onclick = (e) => {
         e.preventDefault();
-        
-        // Update state with current playback info for PWA persistence
         playStateManager.saveState(
           state.song,
           !audio.paused,
@@ -206,11 +204,8 @@
           state.playlist,
           state.currentIndex
         );
-        
-        // Allow Firebase to finish syncing before navigating
-        setTimeout(() => {
-          location.href = 'index.html';
-        }, 100);
+        // Go back to previous page or home
+        history.back();
       };
 
     } catch (e) {

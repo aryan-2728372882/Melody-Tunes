@@ -8,8 +8,16 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:'Inter',sans-serif; background:#f4f6f9; padding:2rem; }
+    body { font-family:'Inter',sans-serif; background:#f4f6f9; padding:2rem; padding-bottom:100px; }
     .container { max-width:1400px; margin:auto; }
+    .top-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem; gap:1rem; flex-wrap:wrap; }
+    .top-bar a, .top-bar button { padding:0.6rem 1rem; border-radius:8px; border:none; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:0.5rem; font-size:0.9rem; }
+    .home-btn { background:#4a90e2; color:#fff; }
+    .home-btn:hover { background:#357abd; }
+    .user-btn { background:#2ecc71; color:#fff; }
+    .user-btn:hover { background:#27ae60; }
+    .logout { background:#e74c3c; color:#fff; }
+    .logout:hover { background:#c0392b; }
     h1 { text-align:center; margin-bottom:2rem; color:#4a90e2; }
     .stats-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:2rem; }
     .stat-card { background:#fff; padding:1.5rem; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.1); text-align:center; }
@@ -24,20 +32,44 @@
     .user-details { display:flex; flex-direction:column; }
     .user-name { font-weight:500; color:#333; }
     .user-email { font-size:0.85rem; color:#999; }
-    .logout { position:fixed; top:20px; right:20px; background:#e74c3c; color:#fff; padding:0.6rem 1rem; border-radius:8px; cursor:pointer; border:none; }
     .loading { text-align:center; padding:3rem; color:#999; }
     .no-data { text-align:center; padding:3rem; color:#999; }
+
+    /* Player Styles */
+    .player {position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #ddd;padding:0.75rem;display:flex;align-items:center;gap:0.75rem;box-shadow:0 -4px 12px rgba(0,0,0,0.1);z-index:999;}
+    .player.hidden {display:none;}
+    .thumb-placeholder {width:50px;height:50px;background:#ddd;border-radius:8px;background-size:cover;background-position:center;}
+    .player .info {flex:1;min-width:0;}
+    .player .info h4 {font-size:0.9rem;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .player .controls {display:flex;gap:0.5rem;}
+    .icon-btn {background:none;border:none;cursor:pointer;padding:0.5rem;font-size:1.4rem;color:#4a90e2;}
+    .icon-btn:hover {color:#357abd;}
+    .seek-bar {width:100%;height:4px;-webkit-appearance:none;appearance:none;background:#ddd;border-radius:2px;outline:none;cursor:pointer;}
+    .seek-bar::-webkit-slider-thumb {-webkit-appearance:none;appearance:none;width:12px;height:12px;background:#4a90e2;border-radius:50%;cursor:pointer;}
+    .seek-bar::-moz-range-thumb {width:12px;height:12px;background:#4a90e2;border-radius:50%;cursor:pointer;border:none;}
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>MusicsAura Admin Dashboard</h1>
-    <a href="index.html" class="home-btn">
-  <span class="material-icons">home</span>
-  Home
-</a>
-
-    <button class="logout" id="logout">Logout</button>
+    <div class="top-bar">
+      <div>
+        <a href="index.html" class="home-btn">
+          <span class="material-icons">home</span>
+          Home
+        </a>
+      </div>
+      <h1 style="margin:0; flex:1; text-align:center;">MusicsAura Admin Dashboard</h1>
+      <div style="display:flex; gap:0.5rem;">
+        <a href="user-dashboard.html" class="user-btn">
+          <span class="material-icons">person</span>
+          My Stats
+        </a>
+        <button class="logout" id="logout">
+          <span class="material-icons">logout</span>
+          Logout
+        </button>
+      </div>
+    </div>
     
     <div class="stats-summary">
       <div class="stat-card">
@@ -72,10 +104,37 @@
     <div id="no-data" class="no-data" style="display:none;">No users found</div>
   </div>
 
+  <!-- PLAYER - Fixed Bottom Position -->
+  <footer id="player" class="player hidden">
+    <div class="thumb-placeholder"></div>
+    <div class="info">
+      <h4 id="player-title">Select a song</h4>
+      <audio id="audio" preload="auto" crossorigin="anonymous"></audio>
+      <input type="range" id="seek" value="0" max="100" class="seek-bar" aria-label="Seek" />
+    </div>
+
+    <div class="controls">
+      <button id="prev" class="icon-btn" aria-label="Previous">
+        <span class="material-icons">skip_previous</span>
+      </button>
+      <button id="play-pause" class="icon-btn" aria-label="Play/Pause">
+        <span class="material-icons">play_arrow</span>
+      </button>
+      <button id="next" class="icon-btn" aria-label="Next">
+        <span class="material-icons">skip_next</span>
+      </button>
+      <button id="repeat" class="icon-btn" aria-label="Repeat">
+        <span class="material-icons">repeat</span>
+      </button>
+    </div>
+  </footer>
+
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script>
+  <script type="module">
+    import { playStateManager } from "./scripts/play-state-manager.js";
+
     // Initialize Firebase with compat library
     const firebaseConfig = {
       apiKey: "AIzaSyClIhXAaTVmlqhEPxU49C9w9fDkUag-1eQ",
@@ -92,9 +151,109 @@
     const auth = firebase.auth();
     const db = firebase.firestore();
 
+    // Restore playback when page loads
+    const state = playStateManager.getState();
+    if (state && state.song) {
+      restorePlayback(state);
+    }
+
+    async function restorePlayback(state) {
+      try {
+        const audio = document.getElementById('audio');
+        const playerEl = document.getElementById('player');
+        const titleEl = document.getElementById('player-title');
+        const thumbEl = document.querySelector('.thumb-placeholder');
+        const playBtn = document.getElementById('play-pause').querySelector('span');
+
+        if (!audio || !state.song) return;
+
+        // Update UI
+        titleEl.textContent = state.song.title || 'Unknown Song';
+        thumbEl.style.backgroundImage = state.song.thumbnail ? `url(${state.song.thumbnail})` : '';
+        playerEl.classList.remove('hidden');
+
+        // Set up audio
+        audio.src = state.song.link;
+        audio.currentTime = state.currentTime || 0;
+
+        // Restore playback state
+        if (state.isPlaying) {
+          try {
+            audio.play().then(() => {
+              playBtn.textContent = 'pause';
+            }).catch(err => {
+              console.error('Auto-play failed:', err);
+              playBtn.textContent = 'play_arrow';
+            });
+          } catch (e) {
+            console.error('Playback restore error:', e);
+          }
+        } else {
+          playBtn.textContent = 'play_arrow';
+        }
+
+        // Setup basic controls
+        document.getElementById('play-pause').onclick = () => {
+          if (audio.paused) {
+            audio.play().then(() => playBtn.textContent = 'pause').catch(() => {});
+          } else {
+            audio.pause();
+            playBtn.textContent = 'play_arrow';
+          }
+        };
+
+        document.getElementById('prev').onclick = () => {
+          audio.currentTime = Math.max(0, audio.currentTime - 10);
+        };
+
+        document.getElementById('next').onclick = () => {
+          audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 10);
+        };
+
+        document.getElementById('seek').oninput = (e) => {
+          if (audio.duration) {
+            audio.currentTime = (e.target.value / 100) * audio.duration;
+          }
+        };
+
+        audio.ontimeupdate = () => {
+          const seek = document.getElementById('seek');
+          if (audio.duration) {
+            seek.value = (audio.currentTime / audio.duration) * 100;
+          }
+        };
+
+        // Save state before leaving
+        const homeBtn = document.querySelector('.home-btn');
+        if (homeBtn) {
+          homeBtn.onclick = (e) => {
+            e.preventDefault();
+            playStateManager.saveState(
+              state.song,
+              !audio.paused,
+              audio.currentTime,
+              state.playlist,
+              state.currentIndex
+            );
+            location.href = 'index.html';
+          };
+        }
+
+      } catch (e) {
+        console.error('Error restoring playback:', e);
+      }
+    }
+
     auth.onAuthStateChanged(async (user) => {
-      if (!user || user.email !== '') {
+      // Only admin can access this dashboard
+      if (!user) {
         window.location.href = 'auth.html';
+        return;
+      }
+
+      // If not admin, redirect to user dashboard
+      if (user.email !== 'prabhakararyan2007@gmail.com') {
+        window.location.href = 'user-dashboard.html';
         return;
       }
 
@@ -161,7 +320,10 @@
       }
     });
 
-    document.getElementById('logout').onclick = () => auth.signOut().then(() => window.location.href = 'auth.html');
+    document.getElementById('logout').onclick = () => {
+      playStateManager.clearState();
+      auth.signOut().then(() => window.location.href = 'auth.html');
+    };
   </script>
 </body>
 </html>
