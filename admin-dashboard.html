@@ -60,7 +60,7 @@
       </div>
       <h1 style="margin:0; flex:1; text-align:center;">MusicsAura Admin Dashboard</h1>
       <div style="display:flex; gap:0.5rem;">
-        <a href="user-dashboard.html" class="user-btn" target="_blank" rel="noopener">
+        <a href="user-dashboard.html" class="user-btn">
           <span class="material-icons">person</span>
           My Stats
         </a>
@@ -104,30 +104,6 @@
     <div id="no-data" class="no-data" style="display:none;">No users found</div>
   </div>
 
-  <!-- PLAYER - Fixed Bottom Position -->
-  <footer id="player" class="player hidden">
-    <div class="thumb-placeholder"></div>
-    <div class="info">
-      <h4 id="player-title">Select a song</h4>
-      <audio id="audio" preload="auto" crossorigin="anonymous"></audio>
-      <input type="range" id="seek" value="0" max="100" class="seek-bar" aria-label="Seek" />
-    </div>
-
-    <div class="controls">
-      <button id="prev" class="icon-btn" aria-label="Previous">
-        <span class="material-icons">skip_previous</span>
-      </button>
-      <button id="play-pause" class="icon-btn" aria-label="Play/Pause">
-        <span class="material-icons">play_arrow</span>
-      </button>
-      <button id="next" class="icon-btn" aria-label="Next">
-        <span class="material-icons">skip_next</span>
-      </button>
-      <button id="repeat" class="icon-btn" aria-label="Repeat">
-        <span class="material-icons">repeat</span>
-      </button>
-    </div>
-  </footer>
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -150,105 +126,6 @@
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
-
-    // Restore playback when page loads
-    const state = playStateManager.getState();
-    if (state && state.song) {
-      restorePlayback(state);
-    }
-
-    async function restorePlayback(state) {
-      try {
-        const audio = document.getElementById('audio');
-        const playerEl = document.getElementById('player');
-        const titleEl = document.getElementById('player-title');
-        const thumbEl = document.querySelector('.thumb-placeholder');
-        const playBtn = document.getElementById('play-pause').querySelector('span');
-
-        if (!audio || !state.song) return;
-
-        // Update UI
-        titleEl.textContent = state.song.title || 'Unknown Song';
-        thumbEl.style.backgroundImage = state.song.thumbnail ? `url(${state.song.thumbnail})` : '';
-        playerEl.classList.remove('hidden');
-
-        // Set up audio
-        audio.src = state.song.link;
-        audio.currentTime = state.currentTime || 0;
-
-        // Restore playback state
-        if (state.isPlaying) {
-          try {
-            audio.play().then(() => {
-              playBtn.textContent = 'pause';
-            }).catch(err => {
-              console.error('Auto-play failed:', err);
-              playBtn.textContent = 'play_arrow';
-            });
-          } catch (e) {
-            console.error('Playback restore error:', e);
-          }
-        } else {
-          playBtn.textContent = 'play_arrow';
-        }
-
-        // Setup basic controls
-        document.getElementById('play-pause').onclick = () => {
-          if (audio.paused) {
-            audio.play().then(() => playBtn.textContent = 'pause').catch(() => {});
-          } else {
-            audio.pause();
-            playBtn.textContent = 'play_arrow';
-          }
-        };
-
-        document.getElementById('prev').onclick = () => {
-          audio.currentTime = Math.max(0, audio.currentTime - 10);
-        };
-
-        document.getElementById('next').onclick = () => {
-          audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 10);
-        };
-
-        document.getElementById('seek').oninput = (e) => {
-          if (audio.duration) {
-            audio.currentTime = (e.target.value / 100) * audio.duration;
-          }
-        };
-
-        audio.ontimeupdate = () => {
-          const seek = document.getElementById('seek');
-          if (audio.duration) {
-            seek.value = (audio.currentTime / audio.duration) * 100;
-          }
-        };
-
-        // Save state before leaving
-        const homeBtn = document.querySelector('.home-btn');
-        if (homeBtn) {
-          homeBtn.onclick = (e) => {
-            e.preventDefault();
-            playStateManager.saveState(
-              state.song,
-              !audio.paused,
-              audio.currentTime,
-              state.playlist,
-              state.currentIndex
-            );
-            try {
-              if (window.top && window.top !== window.self) {
-                window.top.postMessage({ type: 'closeShell' }, '*');
-                return;
-              }
-            } catch (e) {}
-            location.href = 'index.html';
-          };
-        }
-
-      } catch (e) {
-        console.error('Error restoring playback:', e);
-      }
-    }
 
     auth.onAuthStateChanged(async (user) => {
       // Only admin can access this dashboard

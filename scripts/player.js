@@ -670,22 +670,7 @@ onAuthStateChanged(auth, user => {
     if (state.currentSong) {
       playStateManager.saveState(state.currentSong, state.isPlaying, state.currentTime, state.playlist, state.currentIndex);
     }
-
-    const url = user.email === "prabhakararyan2007@gmail.com" ? "admin-dashboard.html" : "user-dashboard.html";
-    const iframe = document.getElementById('app-frame');
-    if (iframe) {
-      // Load dashboard inside the shell iframe so the player stays in the parent page
-      iframe.src = url;
-      iframe.style.display = 'block';
-      iframe.setAttribute('aria-hidden', 'false');
-      try { iframe.focus(); } catch (e) {}
-    } else {
-      try {
-        window.open(url, '_blank', 'noopener');
-      } catch (e) {
-        location.href = url;
-      }
-    }
+    location.href = user.email === "prabhakararyan2007@gmail.com" ? "admin-dashboard.html" : "user-dashboard.html";
   };
 });
 
