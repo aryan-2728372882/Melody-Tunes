@@ -204,7 +204,14 @@
           state.playlist,
           state.currentIndex
         );
-        // Go back to previous page or home
+        // If loaded inside the parent shell iframe, notify parent to close it.
+        try {
+          if (window.top && window.top !== window.self) {
+            window.top.postMessage({ type: 'closeShell' }, '*');
+            return;
+          }
+        } catch (e) {}
+        // Otherwise, go back to previous page or home
         history.back();
       };
 

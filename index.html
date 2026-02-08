@@ -185,5 +185,34 @@
   <!-- Load scripts -->
   <script type="module" src="scripts/player.js"></script>
   <script type="module" src="scripts/app.js"></script>
+  
+  <!-- App shell iframe (keeps player alive while loading pages) -->
+  <iframe id="app-frame" name="app-frame" style="display:none;position:fixed;inset:0;width:100%;height:100%;border:none;z-index:9998;background:#fff;" aria-hidden="true"></iframe>
+  <script>
+    // Open the shell iframe with a URL
+    window.openShell = function(url) {
+      const iframe = document.getElementById('app-frame');
+      if (!iframe) return window.location.href = url;
+      iframe.src = url;
+      iframe.style.display = 'block';
+      iframe.setAttribute('aria-hidden', 'false');
+      try { iframe.focus(); } catch (e) {}
+    };
+
+    // Close the shell iframe
+    window.closeShell = function() {
+      const iframe = document.getElementById('app-frame');
+      if (!iframe) return;
+      iframe.style.display = 'none';
+      iframe.setAttribute('aria-hidden', 'true');
+      try { iframe.src = 'about:blank'; } catch (e) {}
+    };
+
+    // Listen for messages from pages loaded inside the iframe
+    window.addEventListener('message', (e) => {
+      if (!e.data || !e.data.type) return;
+      if (e.data.type === 'closeShell') window.closeShell();
+    });
+  </script>
 </body>
 </html>

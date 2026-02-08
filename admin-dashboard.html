@@ -235,6 +235,12 @@
               state.playlist,
               state.currentIndex
             );
+            try {
+              if (window.top && window.top !== window.self) {
+                window.top.postMessage({ type: 'closeShell' }, '*');
+                return;
+              }
+            } catch (e) {}
             location.href = 'index.html';
           };
         }
